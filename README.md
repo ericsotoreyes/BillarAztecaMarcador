@@ -78,3 +78,11 @@ La v8 conserva exactamente el diseño y la lógica de la v7, pero reemplaza el P
 - Si se confirma, la aplicación se cierra.
 - Si se cancela, la partida continúa sin cambios.
 - No se modificó ninguna otra función del marcador.
+
+
+## v14
+
+- Basada en la v13 estable.
+- Se aumentó al máximo práctico el tamaño visual del número principal de carambolas de cada jugador.
+- El número utiliza autoajuste de tamaño para aprovechar el espacio disponible sin cortarse ni invadir otros elementos.
+- Se conservan sin cambios nombres, promedio, serie mayor, entrada, cronómetro, controles y toda la lógica del marcador.
