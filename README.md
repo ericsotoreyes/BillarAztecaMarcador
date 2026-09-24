@@ -34,3 +34,12 @@ La v8 conserva exactamente el diseño y la lógica de la v7, pero reemplaza el P
 - La extensión se solicita desde el panel del jugador activo; al llegar el reloj a 0, se reinicia automáticamente una sola vez.
 - El contador de extensiones restantes se muestra en cada panel y se reinicia a 2 al comenzar un nuevo partido.
 - Deshacer también restaura una solicitud de extensión.
+
+
+## v10
+
+- Basada en la v9 estable.
+- Al alcanzar la distancia del partido, el cronómetro se detiene inmediatamente en el tiempo que tenga en ese momento.
+- Ya no se reinicia el reloj después de la carambola ganadora.
+- Se eliminó la opción “Continuar” del aviso de partido terminado para evitar que el cronómetro vuelva a correr accidentalmente.
+- Desde el aviso final se puede cerrar o iniciar un nuevo partido.
