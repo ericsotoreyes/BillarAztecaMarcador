@@ -9,6 +9,8 @@ import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.media.AudioManager;
+import android.media.ToneGenerator;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -68,6 +70,8 @@ public class MainActivity extends Activity {
     private Button extension1Button;
     private Button extension2Button;
 
+    private ToneGenerator toneGenerator;
+
     private String tableName = "Mesa 1";
     private String player1 = "Jugador 1";
     private String player2 = "Jugador 2";
@@ -89,6 +93,8 @@ public class MainActivity extends Activity {
     private boolean extensionArmed = false;
 
     private boolean paused = false;
+    private boolean gameStarted = false;
+    private boolean matchFinished = false;
     private long lastTick = 0L;
 
     @Override
@@ -123,6 +129,13 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         handler.removeCallbacks(timerRunnable);
+        if (toneGenerator != null) {
+            try {
+                toneGenerator.release();
+            } catch (Throwable ignored) {
+            }
+            toneGenerator = null;
+        }
         super.onDestroy();
     }
 
@@ -423,13 +436,13 @@ public class MainActivity extends Activity {
 
         undoButton = styledButton("↶  Deshacer", Color.rgb(150, 156, 164), Color.rgb(14, 21, 29), 14);
         Button endTurn = styledButton("FIN DE TURNO", BLUE, Color.WHITE, 19);
-        pauseButton = styledButton("Pausa", LIGHT, Color.rgb(14, 21, 29), 14);
+        pauseButton = styledButton("INICIAR PARTIDA", YELLOW, Color.BLACK, 14);
         Button reset = styledButton("Reiniciar reloj", LIGHT, Color.rgb(14, 21, 29), 13);
         Button newGame = styledButton("Nuevo partido", LIGHT, Color.rgb(14, 21, 29), 13);
 
         undoButton.setOnClickListener(v -> undo());
         endTurn.setOnClickListener(v -> finishTurn());
-        pauseButton.setOnClickListener(v -> togglePause());
+        pauseButton.setOnClickListener(v -> handleStartPause());
         reset.setOnClickListener(v -> resetTimerManual());
         newGame.setOnClickListener(v -> requestNewGame());
 
@@ -529,30 +542,60 @@ public class MainActivity extends Activity {
         active1View.setVisibility(currentPlayer == 1 ? View.VISIBLE : View.INVISIBLE);
         active2View.setVisibility(currentPlayer == 2 ? View.VISIBLE : View.INVISIBLE);
 
-        activeView.setText("En turno: " + (currentPlayer == 1 ? player1 : player2));
+        String currentName = currentPlayer == 1 ? player1 : player2;
+        if (matchFinished) {
+            activeView.setText("Partida terminada");
+        } else if (!gameStarted) {
+            activeView.setText("Primer turno: " + currentName);
+        } else {
+            activeView.setText("En turno: " + currentName);
+        }
 
         updateExtensionButton(extension1Button, 1, extensions1);
         updateExtensionButton(extension2Button, 2, extensions2);
 
-        pauseButton.setText(paused ? "Reanudar" : "Pausa");
-        if (paused) {
+        if (matchFinished) {
+            pauseButton.setText("PARTIDA TERMINADA");
+            pauseButton.setEnabled(false);
+            pauseButton.setTextColor(Color.rgb(90, 95, 102));
+            pauseButton.setBackground(roundRect(Color.rgb(190, 194, 200), Color.argb(35, 0, 0, 0), 1, 12));
+        } else if (!gameStarted) {
+            pauseButton.setText("INICIAR PARTIDA");
+            pauseButton.setEnabled(true);
             pauseButton.setTextColor(Color.BLACK);
             pauseButton.setBackground(roundRect(YELLOW, Color.argb(65, 0, 0, 0), 1, 12));
         } else {
-            pauseButton.setTextColor(Color.rgb(14, 21, 29));
-            pauseButton.setBackground(roundRect(LIGHT, Color.argb(50, 255, 255, 255), 1, 12));
+            pauseButton.setEnabled(true);
+            pauseButton.setText(paused ? "Reanudar" : "Pausa");
+            if (paused) {
+                pauseButton.setTextColor(Color.BLACK);
+                pauseButton.setBackground(roundRect(YELLOW, Color.argb(65, 0, 0, 0), 1, 12));
+            } else {
+                pauseButton.setTextColor(Color.rgb(14, 21, 29));
+                pauseButton.setBackground(roundRect(LIGHT, Color.argb(50, 255, 255, 255), 1, 12));
+            }
         }
 
         undoButton.setEnabled(!history.isEmpty());
         undoButton.setAlpha(history.isEmpty() ? .55f : 1f);
 
-        timerView.setTimer(secondsLeft, shotSeconds, paused, extensionArmed);
+        timerView.setTimer(secondsLeft, shotSeconds, paused, extensionArmed, gameStarted, matchFinished);
     }
 
     private void updateExtensionButton(Button button, int player, int remaining) {
         if (button == null) return;
 
         boolean isCurrent = player == currentPlayer;
+
+        if (!gameStarted || matchFinished) {
+            button.setText("Extensión · " + remaining);
+            button.setEnabled(false);
+            button.setTextColor(Color.rgb(45, 50, 58));
+            button.setBackground(roundRect(Color.rgb(205, 209, 214), Color.argb(30, 0, 0, 0), 1, 10));
+            button.setAlpha(.65f);
+            return;
+        }
+
         boolean armedHere = isCurrent && extensionArmed;
 
         if (armedHere) {
@@ -588,6 +631,10 @@ public class MainActivity extends Activity {
     }
 
     private void addPoint(int player) {
+        if (!gameStarted || matchFinished) {
+            Toast.makeText(this, "Primero inicia la partida", Toast.LENGTH_SHORT).show();
+            return;
+        }
         if (player != currentPlayer) return;
         pushState();
 
@@ -605,6 +652,8 @@ public class MainActivity extends Activity {
 
         if ((player == 1 ? score1 : score2) >= target) {
             paused = true;
+            gameStarted = false;
+            matchFinished = true;
             lastTick = System.currentTimeMillis();
             refresh();
             showWinner(player);
@@ -615,6 +664,10 @@ public class MainActivity extends Activity {
     }
 
     private void subtractPoint(int player) {
+        if (!gameStarted || matchFinished) {
+            Toast.makeText(this, "Primero inicia la partida", Toast.LENGTH_SHORT).show();
+            return;
+        }
         if (player == 1 && score1 <= 0) return;
         if (player == 2 && score2 <= 0) return;
 
@@ -632,6 +685,10 @@ public class MainActivity extends Activity {
     }
 
     private void finishTurn() {
+        if (!gameStarted || matchFinished) {
+            Toast.makeText(this, "Primero inicia la partida", Toast.LENGTH_SHORT).show();
+            return;
+        }
         pushState();
 
         currentRun = 0;
@@ -649,6 +706,10 @@ public class MainActivity extends Activity {
     }
 
     private void requestExtension(int player) {
+        if (!gameStarted || matchFinished) {
+            Toast.makeText(this, "Primero inicia la partida", Toast.LENGTH_SHORT).show();
+            return;
+        }
         if (player != currentPlayer) return;
 
         int remaining = player == 1 ? extensions1 : extensions2;
@@ -689,6 +750,23 @@ public class MainActivity extends Activity {
         refresh();
     }
 
+    private void handleStartPause() {
+        if (matchFinished) return;
+
+        if (!gameStarted) {
+            gameStarted = true;
+            paused = false;
+            secondsLeft = shotSeconds;
+            extensionArmed = false;
+            lastTick = System.currentTimeMillis();
+            refresh();
+            Toast.makeText(this, "Partida iniciada", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        togglePause();
+    }
+
     private void togglePause() {
         paused = !paused;
         lastTick = System.currentTimeMillis();
@@ -698,7 +776,9 @@ public class MainActivity extends Activity {
     private void resetTimerManual() {
         extensionArmed = false;
         secondsLeft = shotSeconds;
-        paused = false;
+        if (gameStarted && !matchFinished) {
+            paused = false;
+        }
         lastTick = System.currentTimeMillis();
         refresh();
     }
@@ -830,6 +910,8 @@ public class MainActivity extends Activity {
 
     private void requestNewGame() {
         boolean hasProgress =
+                gameStarted ||
+                matchFinished ||
                 score1 > 0 ||
                 score2 > 0 ||
                 innings1 > 1 ||
@@ -888,7 +970,7 @@ public class MainActivity extends Activity {
                 .setTitle("Nuevo partido")
                 .setView(box)
                 .setNegativeButton("Cancelar", null)
-                .setPositiveButton("Iniciar", null)
+                .setPositiveButton("Preparar", null)
                 .create();
 
         dialog.setOnShowListener(v ->
@@ -920,6 +1002,8 @@ public class MainActivity extends Activity {
                         extensionArmed = false;
 
                         paused = false;
+                        gameStarted = false;
+                        matchFinished = false;
                         history.clear();
                         lastTick = System.currentTimeMillis();
 
@@ -958,6 +1042,7 @@ public class MainActivity extends Activity {
                 currentRun, currentPlayer,
                 target, shotSeconds,
                 secondsLeft, paused,
+                gameStarted, matchFinished,
                 extensions1, extensions2,
                 extensionArmed
         ));
@@ -986,6 +1071,8 @@ public class MainActivity extends Activity {
         shotSeconds = s.shotSeconds;
         secondsLeft = s.secondsLeft;
         paused = s.paused;
+        gameStarted = s.gameStarted;
+        matchFinished = s.matchFinished;
         extensions1 = s.extensions1;
         extensions2 = s.extensions2;
         extensionArmed = s.extensionArmed;
@@ -1000,23 +1087,28 @@ public class MainActivity extends Activity {
             try {
                 long now = System.currentTimeMillis();
 
-                if (!paused && secondsLeft > 0 && lastTick > 0) {
+                if (gameStarted && !matchFinished && !paused && secondsLeft > 0 && lastTick > 0) {
                     long elapsed = now - lastTick;
 
                     if (elapsed >= 1000L) {
+                        int previousSeconds = secondsLeft;
                         int steps = (int) (elapsed / 1000L);
                         secondsLeft = Math.max(0, secondsLeft - steps);
                         lastTick += steps * 1000L;
 
-                        if (secondsLeft == 0 && extensionArmed) {
-                            secondsLeft = shotSeconds;
-                            extensionArmed = false;
-                            lastTick = now;
-                            Toast.makeText(
-                                    MainActivity.this,
-                                    "Extensión: tiempo reiniciado",
-                                    Toast.LENGTH_SHORT
-                            ).show();
+                        if (previousSeconds > 0 && secondsLeft == 0) {
+                            playTimeExpiredBeep();
+
+                            if (extensionArmed) {
+                                secondsLeft = shotSeconds;
+                                extensionArmed = false;
+                                lastTick = now;
+                                Toast.makeText(
+                                        MainActivity.this,
+                                        "Extensión: tiempo reiniciado",
+                                        Toast.LENGTH_SHORT
+                                ).show();
+                            }
                         }
 
                         refresh();
@@ -1030,6 +1122,16 @@ public class MainActivity extends Activity {
             handler.postDelayed(this, 100L);
         }
     };
+
+    private void playTimeExpiredBeep() {
+        try {
+            if (toneGenerator == null) {
+                toneGenerator = new ToneGenerator(AudioManager.STREAM_ALARM, 100);
+            }
+            toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 250);
+        } catch (Throwable ignored) {
+        }
+    }
 
     private void showFallback(Throwable error) {
         LinearLayout box = new LinearLayout(this);
@@ -1062,17 +1164,28 @@ public class MainActivity extends Activity {
         private int total = 40;
         private boolean isPaused = false;
         private boolean isExtensionArmed = false;
+        private boolean isGameStarted = false;
+        private boolean isMatchFinished = false;
 
         TimerRingView() {
             super(MainActivity.this);
             setLayerType(View.LAYER_TYPE_SOFTWARE, null);
         }
 
-        void setTimer(int seconds, int total, boolean paused, boolean extensionArmed) {
+        void setTimer(
+                int seconds,
+                int total,
+                boolean paused,
+                boolean extensionArmed,
+                boolean gameStarted,
+                boolean matchFinished
+        ) {
             this.seconds = Math.max(0, seconds);
             this.total = Math.max(1, total);
             this.isPaused = paused;
             this.isExtensionArmed = extensionArmed;
+            this.isGameStarted = gameStarted;
+            this.isMatchFinished = matchFinished;
             invalidate();
         }
 
@@ -1131,7 +1244,13 @@ public class MainActivity extends Activity {
             paint.setTextSize(size * .10f);
 
             String sub;
-            if (isPaused) {
+            if (isMatchFinished) {
+                paint.setColor(YELLOW);
+                sub = "FINAL";
+            } else if (!isGameStarted) {
+                paint.setColor(YELLOW);
+                sub = "LISTO";
+            } else if (isPaused) {
                 paint.setColor(YELLOW);
                 sub = "PAUSA";
             } else if (seconds == 0) {
@@ -1164,6 +1283,8 @@ public class MainActivity extends Activity {
         final int shotSeconds;
         final int secondsLeft;
         final boolean paused;
+        final boolean gameStarted;
+        final boolean matchFinished;
         final int extensions1;
         final int extensions2;
         final boolean extensionArmed;
@@ -1183,6 +1304,8 @@ public class MainActivity extends Activity {
                 int shotSeconds,
                 int secondsLeft,
                 boolean paused,
+                boolean gameStarted,
+                boolean matchFinished,
                 int extensions1,
                 int extensions2,
                 boolean extensionArmed
@@ -1201,6 +1324,8 @@ public class MainActivity extends Activity {
             this.shotSeconds = shotSeconds;
             this.secondsLeft = secondsLeft;
             this.paused = paused;
+            this.gameStarted = gameStarted;
+            this.matchFinished = matchFinished;
             this.extensions1 = extensions1;
             this.extensions2 = extensions2;
             this.extensionArmed = extensionArmed;
