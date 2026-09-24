@@ -56,3 +56,11 @@ Cambios exclusivamente visuales sobre Marcothon v1:
 - Al presionar la X, se solicita confirmación antes de cerrar la aplicación.
 - Si se confirma, la app se cierra; si se cancela, continúa normalmente.
 - No se modificó ninguna otra lógica ni función.
+
+
+## Marcothon v4
+
+- Basada en Marcothon v3.
+- Se aumentó al máximo práctico el tamaño del número principal de carambolas de cada jugador.
+- El número utiliza autoajuste de tamaño para aprovechar el espacio disponible sin cortarse ni invadir otros elementos.
+- Se conservan sin cambios nombres, promedio, serie mayor, entrada, cronómetro, controles y toda la lógica del marcador.
