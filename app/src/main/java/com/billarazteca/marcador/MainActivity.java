@@ -180,7 +180,7 @@ public class MainActivity extends Activity {
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(8), dp(2), dp(10), dp(2));
+        header.setPadding(dp(10), dp(3), dp(10), dp(3));
         header.setBackground(new GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
                 new int[]{YELLOW_SOFT, YELLOW}
@@ -189,13 +189,13 @@ public class MainActivity extends Activity {
         ImageView logo = new ImageView(this);
         logo.setImageResource(R.drawable.billar_azteca_logo);
         logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        header.addView(logo, new LinearLayout.LayoutParams(dp(39), dp(39)));
+        header.addView(logo, new LinearLayout.LayoutParams(dp(48), dp(48)));
 
         TextView title = text("Billar Azteca Club", 23, BRAND_BLUE, true);
         title.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
-        titleParams.setMargins(dp(9), 0, 0, 0);
+        titleParams.setMargins(dp(12), 0, 0, 0);
         header.addView(title, titleParams);
 
         TextView badge = text("MARCADOR", 11, Color.BLACK, true);
