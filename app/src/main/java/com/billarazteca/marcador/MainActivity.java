@@ -2,438 +2,494 @@ package com.billarazteca.marcador;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.graphics.Canvas;
+import android.content.pm.ActivityInfo;
 import android.graphics.Color;
-import android.graphics.Paint;
-import android.graphics.RectF;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.view.MotionEvent;
+import android.text.InputType;
+import android.view.Gravity;
 import android.view.View;
-import android.view.Window;
-import android.view.WindowInsets;
-import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.view.Gravity;
-import android.text.InputType;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
 import java.util.Locale;
 
 public class MainActivity extends Activity {
-    private ScoreboardView board;
+
+    private final Handler handler = new Handler(Looper.getMainLooper());
+
+    private TextView score1View, score2View, avg1View, avg2View, run1View, run2View;
+    private TextView timerView, inningView, activeView;
+    private Button pauseButton;
+
+    private int score1 = 0;
+    private int score2 = 0;
+    private int innings1 = 1;
+    private int innings2 = 0;
+    private int maxRun1 = 0;
+    private int maxRun2 = 0;
+    private int currentRun = 0;
+    private int currentPlayer = 1;
+    private int target = 30;
+    private int shotSeconds = 40;
+    private int secondsLeft = 40;
+    private boolean paused = false;
+
+    private String player1 = "Jugador 1";
+    private String player2 = "Jugador 2";
+
+    private long lastTick = 0L;
+
+    private static final int YELLOW = Color.rgb(255, 213, 0);
+    private static final int BLUE = Color.rgb(18, 103, 232);
+    private static final int BG = Color.rgb(9, 16, 24);
+    private static final int PANEL = Color.rgb(17, 26, 36);
+    private static final int MUTED = Color.rgb(180, 188, 198);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        hideBars();
-        board = new ScoreboardView();
-        setContentView(board);
-    }
 
-    @Override protected void onResume() {
-        super.onResume();
-        hideBars();
-    }
-
-    private void hideBars() {
-        if (android.os.Build.VERSION.SDK_INT >= 30) {
-            WindowInsetsController c = getWindow().getInsetsController();
-            if (c != null) {
-                c.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
-                c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-            }
-        } else {
-            getWindow().getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_FULLSCREEN |
-                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
-                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-            );
+        try {
+            setContentView(buildUi());
+            lastTick = System.currentTimeMillis();
+            handler.post(timerRunnable);
+            refresh();
+        } catch (Throwable t) {
+            showFallback(t);
         }
     }
 
-    private class ScoreboardView extends View {
-        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Handler handler = new Handler(Looper.getMainLooper());
-        private final Deque<State> history = new ArrayDeque<>();
+    @Override
+    protected void onDestroy() {
+        handler.removeCallbacks(timerRunnable);
+        super.onDestroy();
+    }
 
-        private String player1 = "Jugador 1";
-        private String player2 = "Jugador 2";
-        private int score1 = 0, score2 = 0;
-        private int innings1 = 1, innings2 = 0;
-        private int maxRun1 = 0, maxRun2 = 0;
-        private int currentRun = 0;
-        private int currentPlayer = 1;
-        private int target = 30;
-        private int shotTime = 40;
-        private int seconds = 40;
-        private boolean paused = false;
-        private boolean finished = false;
-        private long lastTick = System.currentTimeMillis();
+    private View buildUi() {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(BG);
+        root.setPadding(dp(14), dp(10), dp(14), dp(10));
 
-        private final RectF minus1 = new RectF(), plus1 = new RectF();
-        private final RectF minus2 = new RectF(), plus2 = new RectF();
-        private final RectF undo = new RectF(), endTurn = new RectF();
-        private final RectF pause = new RectF(), newGame = new RectF();
-        private final RectF timer = new RectF();
+        TextView brand = new TextView(this);
+        brand.setText("BILLAR AZTECA");
+        brand.setTextColor(Color.rgb(8, 42, 143));
+        brand.setTextSize(28);
+        brand.setTypeface(Typeface.DEFAULT_BOLD);
+        brand.setGravity(Gravity.CENTER_VERTICAL);
+        brand.setPadding(dp(18), 0, 0, 0);
+        brand.setBackgroundColor(YELLOW);
+        root.addView(brand, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(58)));
 
-        private final Runnable ticker = new Runnable() {
-            @Override public void run() {
+        TextView match = new TextView(this);
+        match.setText("Mesa 1   •   Partido a 30");
+        match.setTextColor(Color.WHITE);
+        match.setTextSize(20);
+        match.setGravity(Gravity.CENTER);
+        match.setTypeface(Typeface.DEFAULT_BOLD);
+        root.addView(match, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+
+        LinearLayout game = new LinearLayout(this);
+        game.setOrientation(LinearLayout.HORIZONTAL);
+        root.addView(game, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        LinearLayout p1 = playerPanel(true);
+        LinearLayout center = centerPanel();
+        LinearLayout p2 = playerPanel(false);
+
+        LinearLayout.LayoutParams playerParams = new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.MATCH_PARENT, 1f);
+        playerParams.setMargins(dp(4), 0, dp(4), 0);
+
+        LinearLayout.LayoutParams centerParams = new LinearLayout.LayoutParams(dp(210),
+                LinearLayout.LayoutParams.MATCH_PARENT);
+        centerParams.setMargins(dp(5), 0, dp(5), 0);
+
+        game.addView(p1, playerParams);
+        game.addView(center, centerParams);
+        game.addView(p2, playerParams);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setPadding(0, dp(8), 0, 0);
+
+        Button endTurn = actionButton("FIN DE TURNO", BLUE, Color.WHITE);
+        endTurn.setOnClickListener(v -> finishTurn());
+
+        pauseButton = actionButton("Pausa", Color.LTGRAY, Color.BLACK);
+        pauseButton.setOnClickListener(v -> {
+            paused = !paused;
+            lastTick = System.currentTimeMillis();
+            refresh();
+        });
+
+        Button resetTime = actionButton("Reiniciar reloj", Color.LTGRAY, Color.BLACK);
+        resetTime.setOnClickListener(v -> resetTimer());
+
+        Button newGame = actionButton("Nuevo partido", Color.LTGRAY, Color.BLACK);
+        newGame.setOnClickListener(v -> showNewGameDialog());
+
+        actions.addView(endTurn, weighted(2f));
+        actions.addView(pauseButton, weighted(1f));
+        actions.addView(resetTime, weighted(1.2f));
+        actions.addView(newGame, weighted(1.2f));
+
+        root.addView(actions, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(64)));
+
+        return root;
+    }
+
+    private LinearLayout playerPanel(boolean first) {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(12), dp(10), dp(12), dp(10));
+        panel.setGravity(Gravity.CENTER_HORIZONTAL);
+        panel.setBackground(rounded(PANEL, Color.rgb(55, 67, 82), 2));
+
+        TextView name = text(first ? player1 : player2, 22, Color.WHITE, true);
+        panel.addView(name, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
+
+        TextView score = text("0", 82, Color.WHITE, true);
+        score.setGravity(Gravity.CENTER);
+        panel.addView(score, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        LinearLayout stats = new LinearLayout(this);
+        stats.setOrientation(LinearLayout.HORIZONTAL);
+
+        LinearLayout avgBox = statBox("Promedio");
+        LinearLayout runBox = statBox("Serie mayor");
+
+        TextView avgValue = (TextView) avgBox.getChildAt(1);
+        TextView runValue = (TextView) runBox.getChildAt(1);
+
+        stats.addView(avgBox, weighted(1f));
+        stats.addView(runBox, weighted(1f));
+        panel.addView(stats, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(90)));
+
+        LinearLayout scoreButtons = new LinearLayout(this);
+        scoreButtons.setOrientation(LinearLayout.HORIZONTAL);
+
+        Button minus = actionButton("−1", BLUE, Color.WHITE);
+        Button plus = actionButton("+1", YELLOW, Color.BLACK);
+
+        if (first) {
+            minus.setOnClickListener(v -> { if (score1 > 0) { score1--; if (currentPlayer == 1 && currentRun > 0) currentRun--; refresh(); } });
+            plus.setOnClickListener(v -> { if (currentPlayer == 1) addPoint(1); });
+            score1View = score;
+            avg1View = avgValue;
+            run1View = runValue;
+        } else {
+            minus.setOnClickListener(v -> { if (score2 > 0) { score2--; if (currentPlayer == 2 && currentRun > 0) currentRun--; refresh(); } });
+            plus.setOnClickListener(v -> { if (currentPlayer == 2) addPoint(2); });
+            score2View = score;
+            avg2View = avgValue;
+            run2View = runValue;
+        }
+
+        scoreButtons.addView(minus, weighted(1f));
+        scoreButtons.addView(plus, weighted(1f));
+
+        panel.addView(scoreButtons, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(70)));
+
+        return panel;
+    }
+
+    private LinearLayout centerPanel() {
+        LinearLayout center = new LinearLayout(this);
+        center.setOrientation(LinearLayout.VERTICAL);
+        center.setGravity(Gravity.CENTER);
+        center.setPadding(dp(8), dp(10), dp(8), dp(10));
+        center.setBackground(rounded(Color.rgb(13, 21, 30), Color.rgb(55, 67, 82), 2));
+
+        TextView entryLabel = text("Entrada", 17, MUTED, false);
+        entryLabel.setGravity(Gravity.CENTER);
+        center.addView(entryLabel, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(30)));
+
+        inningView = text("1", 38, Color.WHITE, true);
+        inningView.setGravity(Gravity.CENTER);
+        center.addView(inningView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(50)));
+
+        timerView = text("40", 76, Color.WHITE, true);
+        timerView.setGravity(Gravity.CENTER);
+        timerView.setBackground(rounded(Color.rgb(6, 11, 17), BLUE, 4));
+        timerView.setOnClickListener(v -> resetTimer());
+        center.addView(timerView, new LinearLayout.LayoutParams(dp(160), dp(160)));
+
+        TextView sec = text("segundos", 17, MUTED, false);
+        sec.setGravity(Gravity.CENTER);
+        center.addView(sec, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(34)));
+
+        activeView = text("En turno: Jugador 1", 15, YELLOW, true);
+        activeView.setGravity(Gravity.CENTER);
+        center.addView(activeView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(52)));
+
+        return center;
+    }
+
+    private LinearLayout statBox(String labelText) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setGravity(Gravity.CENTER);
+        box.setPadding(dp(4), dp(4), dp(4), dp(4));
+        box.setBackground(rounded(Color.rgb(9, 15, 22), Color.rgb(55, 67, 82), 1));
+
+        TextView label = text(labelText, 15, MUTED, false);
+        label.setGravity(Gravity.CENTER);
+        TextView value = text("0", 28, YELLOW, true);
+        value.setGravity(Gravity.CENTER);
+
+        box.addView(label, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+        box.addView(value, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.4f));
+        return box;
+    }
+
+    private Button actionButton(String label, int bg, int fg) {
+        Button b = new Button(this);
+        b.setText(label);
+        b.setTextSize(17);
+        b.setTextColor(fg);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setAllCaps(false);
+        b.setBackground(rounded(bg, bg, 0));
+        b.setPadding(dp(8), 0, dp(8), 0);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT);
+        b.setLayoutParams(lp);
+        return b;
+    }
+
+    private LinearLayout.LayoutParams weighted(float weight) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.MATCH_PARENT, weight);
+        lp.setMargins(dp(4), dp(3), dp(4), dp(3));
+        return lp;
+    }
+
+    private TextView text(String value, int sp, int color, boolean bold) {
+        TextView t = new TextView(this);
+        t.setText(value);
+        t.setTextSize(sp);
+        t.setTextColor(color);
+        if (bold) t.setTypeface(Typeface.DEFAULT_BOLD);
+        return t;
+    }
+
+    private GradientDrawable rounded(int fill, int stroke, int strokeDp) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(fill);
+        d.setCornerRadius(dp(16));
+        if (strokeDp > 0) d.setStroke(dp(strokeDp), stroke);
+        return d;
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private void addPoint(int player) {
+        if (player != currentPlayer) return;
+
+        if (player == 1) {
+            score1++;
+            currentRun++;
+            if (currentRun > maxRun1) maxRun1 = currentRun;
+        } else {
+            score2++;
+            currentRun++;
+            if (currentRun > maxRun2) maxRun2 = currentRun;
+        }
+
+        resetTimer();
+
+        if ((player == 1 ? score1 : score2) >= target) {
+            paused = true;
+            refresh();
+            String winner = player == 1 ? player1 : player2;
+            new AlertDialog.Builder(this)
+                    .setTitle("Partido terminado")
+                    .setMessage(winner + " alcanzó " + target + " puntos.")
+                    .setPositiveButton("Aceptar", null)
+                    .show();
+        }
+    }
+
+    private void finishTurn() {
+        currentRun = 0;
+
+        if (currentPlayer == 1) {
+            currentPlayer = 2;
+            innings2++;
+        } else {
+            currentPlayer = 1;
+            innings1++;
+        }
+
+        resetTimer();
+    }
+
+    private void resetTimer() {
+        secondsLeft = shotSeconds;
+        paused = false;
+        lastTick = System.currentTimeMillis();
+        refresh();
+    }
+
+    private void refresh() {
+        if (score1View == null) return;
+
+        score1View.setText(String.valueOf(score1));
+        score2View.setText(String.valueOf(score2));
+
+        avg1View.setText(String.format(Locale.US, "%.3f", innings1 > 0 ? score1 / (double) innings1 : 0.0));
+        avg2View.setText(String.format(Locale.US, "%.3f", innings2 > 0 ? score2 / (double) innings2 : 0.0));
+
+        run1View.setText(String.valueOf(maxRun1));
+        run2View.setText(String.valueOf(maxRun2));
+
+        inningView.setText(String.valueOf(Math.max(innings1, innings2)));
+        timerView.setText(String.valueOf(secondsLeft));
+
+        if (secondsLeft <= 5) {
+            timerView.setTextColor(Color.rgb(235, 66, 66));
+        } else if (secondsLeft <= 10) {
+            timerView.setTextColor(Color.rgb(255, 159, 28));
+        } else {
+            timerView.setTextColor(Color.WHITE);
+        }
+
+        activeView.setText("En turno: " + (currentPlayer == 1 ? player1 : player2));
+        pauseButton.setText(paused ? "Reanudar" : "Pausa");
+    }
+
+    private final Runnable timerRunnable = new Runnable() {
+        @Override
+        public void run() {
+            try {
                 long now = System.currentTimeMillis();
-                if (!paused && !finished && seconds > 0) {
-                    long diff = now - lastTick;
-                    if (diff >= 1000) {
-                        int elapsed = (int)(diff / 1000);
-                        seconds = Math.max(0, seconds - elapsed);
-                        lastTick += elapsed * 1000L;
-                        invalidate();
+                if (!paused && secondsLeft > 0 && lastTick > 0) {
+                    long elapsed = now - lastTick;
+                    if (elapsed >= 1000L) {
+                        int steps = (int) (elapsed / 1000L);
+                        secondsLeft = Math.max(0, secondsLeft - steps);
+                        lastTick += steps * 1000L;
+                        refresh();
                     }
                 } else {
                     lastTick = now;
                 }
-                handler.postDelayed(this, 100);
+            } catch (Throwable ignored) {
             }
-        };
-
-        ScoreboardView() {
-            super(MainActivity.this);
-            setFocusable(true);
-            handler.post(ticker);
+            handler.postDelayed(this, 100L);
         }
+    };
 
-        @Override protected void onDetachedFromWindow() {
-            handler.removeCallbacks(ticker);
-            super.onDetachedFromWindow();
-        }
+    private void showNewGameDialog() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(8), dp(20), 0);
 
-        private int col(String s) { return Color.parseColor(s); }
-        private float dp(float n) { return n * getResources().getDisplayMetrics().density; }
+        EditText p1 = field(player1, false);
+        EditText p2 = field(player2, false);
+        EditText distance = field(String.valueOf(target), true);
+        EditText time = field(String.valueOf(shotSeconds), true);
 
-        @Override protected void onDraw(Canvas c) {
-            super.onDraw(c);
-            float w = getWidth(), h = getHeight();
-            if (w <= 0 || h <= 0) return;
+        box.addView(label("Jugador 1"));
+        box.addView(p1);
+        box.addView(label("Jugador 2"));
+        box.addView(p2);
+        box.addView(label("Distancia"));
+        box.addView(distance);
+        box.addView(label("Segundos por tiro"));
+        box.addView(time);
 
-            int bg = col("#091018");
-            int panel = col("#111A24");
-            int yellow = col("#FFD500");
-            int blue = col("#1267E8");
-            int muted = col("#AAB4C0");
-            int border = col("#344252");
-
-            c.drawColor(bg);
-
-            float headerH = h * .12f;
-            p.setStyle(Paint.Style.FILL);
-            p.setColor(yellow);
-            c.drawRect(0, 0, w, headerH, p);
-
-            float badgeR = headerH * .31f;
-            float badgeX = w * .035f;
-            float badgeY = headerH * .5f;
-            p.setColor(Color.BLACK);
-            c.drawCircle(badgeX, badgeY, badgeR, p);
-            drawText(c, "BA", badgeX, badgeY + headerH * .11f, headerH * .31f, yellow, Paint.Align.CENTER);
-            drawText(c, "Billar Azteca", badgeX + badgeR + w * .018f, headerH * .67f,
-                    headerH * .46f, col("#092A8F"), Paint.Align.LEFT);
-
-            float top = headerH + h * .018f;
-            drawText(c, "Mesa 1", w/2f, top + h * .047f, h * .055f, Color.WHITE, Paint.Align.CENTER);
-            drawText(c, "Partido a " + target, w/2f, top + h * .086f, h * .026f, muted, Paint.Align.CENTER);
-
-            float margin = w * .024f;
-            float gap = w * .017f;
-            float centerW = w * .205f;
-            float playerW = (w - 2*margin - 2*gap - centerW) / 2f;
-            float cardsTop = top + h * .105f;
-            float cardsBottom = h * .80f;
-
-            RectF left = new RectF(margin, cardsTop, margin + playerW, cardsBottom);
-            RectF mid = new RectF(left.right + gap, cardsTop, left.right + gap + centerW, cardsBottom);
-            RectF right = new RectF(mid.right + gap, cardsTop, mid.right + gap + playerW, cardsBottom);
-
-            panel(c, left, panel, currentPlayer == 1 ? yellow : border, currentPlayer == 1 ? dp(4) : dp(2));
-            panel(c, right, panel, currentPlayer == 2 ? yellow : border, currentPlayer == 2 ? dp(4) : dp(2));
-            panel(c, mid, col("#0D151E"), border, dp(2));
-
-            drawPlayer(c, left, 1, player1, score1, average(score1, innings1), maxRun1, currentPlayer == 1);
-            drawPlayer(c, right, 2, player2, score2, average(score2, innings2), maxRun2, currentPlayer == 2);
-
-            float cx = mid.centerX();
-            drawText(c, "Entrada", cx, mid.top + h*.05f, h*.026f, muted, Paint.Align.CENTER);
-            drawText(c, String.valueOf(Math.max(innings1, innings2)), cx, mid.top + h*.115f,
-                    h*.065f, Color.WHITE, Paint.Align.CENTER);
-
-            float r = Math.min(mid.width()*.34f, mid.height()*.24f);
-            float cy = mid.top + mid.height()*.54f;
-            timer.set(cx-r, cy-r, cx+r, cy+r);
-
-            p.setStyle(Paint.Style.STROKE);
-            p.setStrokeWidth(dp(9));
-            p.setStrokeCap(Paint.Cap.ROUND);
-            p.setColor(col("#293746"));
-            c.drawOval(timer, p);
-            float frac = shotTime <= 0 ? 0 : seconds/(float)shotTime;
-            p.setColor(seconds <= 5 ? col("#E53935") : seconds <= 10 ? col("#FF9F1C") : col("#168BFF"));
-            c.drawArc(timer, -90, Math.max(0f, Math.min(1f, frac))*360f, false, p);
-            p.setStyle(Paint.Style.FILL);
-
-            drawText(c, String.valueOf(seconds), cx, cy + h*.025f, h*.085f, Color.WHITE, Paint.Align.CENTER);
-            drawText(c, paused ? "PAUSA" : seconds == 0 ? "TIEMPO" : "segundos",
-                    cx, cy + h*.083f, h*.024f, paused ? yellow : muted, Paint.Align.CENTER);
-            drawText(c, "Tocando: " + (currentPlayer == 1 ? player1 : player2),
-                    cx, mid.bottom - h*.032f, h*.021f, yellow, Paint.Align.CENTER);
-
-            float y1 = h*.83f, y2 = h*.965f, g = w*.012f;
-            float undoW = w*.19f, endW = w*.40f, pauseW = w*.15f;
-            float newW = w - 2*margin - undoW - endW - pauseW - 3*g;
-
-            undo.set(margin, y1, margin+undoW, y2);
-            endTurn.set(undo.right+g, y1, undo.right+g+endW, y2);
-            pause.set(endTurn.right+g, y1, endTurn.right+g+pauseW, y2);
-            newGame.set(pause.right+g, y1, pause.right+g+newW, y2);
-
-            button(c, undo, "Deshacer", col("#E7EBF0"), col("#111820"));
-            button(c, endTurn, "FIN DE TURNO", blue, Color.WHITE);
-            button(c, pause, paused ? "Reanudar" : "Pausa", col("#E7EBF0"), col("#111820"));
-            button(c, newGame, "Nuevo partido", col("#E7EBF0"), col("#111820"));
-        }
-
-        private void drawPlayer(Canvas c, RectF card, int which, String name, int score, double avg, int maxRun, boolean active) {
-            float h = getHeight();
-            int yellow = col("#FFD500"), blue = col("#1267E8"), muted = col("#AAB4C0"), border = col("#344252");
-            float pad = card.width()*.055f;
-            float center = card.centerX();
-
-            drawText(c, name, center, card.top+h*.062f, h*.038f, Color.WHITE, Paint.Align.CENTER);
-            if (active) drawText(c, "● EN TURNO", center, card.top+h*.102f, h*.017f, yellow, Paint.Align.CENTER);
-            drawText(c, String.valueOf(score), center, card.top+card.height()*.45f, h*.155f, Color.WHITE, Paint.Align.CENTER);
-
-            float statTop = card.top + card.height()*.55f;
-            float statBottom = card.top + card.height()*.74f;
-            float sg = card.width()*.025f;
-            RectF a = new RectF(card.left+pad, statTop, center-sg/2f, statBottom);
-            RectF b = new RectF(center+sg/2f, statTop, card.right-pad, statBottom);
-            panel(c,a,col("#0A1016"),border,dp(1));
-            panel(c,b,col("#0A1016"),border,dp(1));
-            drawText(c,"Promedio",a.centerX(),a.top+h*.036f,h*.020f,muted,Paint.Align.CENTER);
-            drawText(c,String.format(Locale.US,"%.3f",avg),a.centerX(),a.bottom-h*.022f,h*.036f,yellow,Paint.Align.CENTER);
-            drawText(c,"Serie mayor",b.centerX(),b.top+h*.036f,h*.020f,muted,Paint.Align.CENTER);
-            drawText(c,String.valueOf(maxRun),b.centerX(),b.bottom-h*.022f,h*.040f,Color.WHITE,Paint.Align.CENTER);
-
-            float bt = card.top+card.height()*.79f, bb = card.bottom-h*.02f;
-            RectF minus = new RectF(card.left+pad,bt,center-sg/2f,bb);
-            RectF plus = new RectF(center+sg/2f,bt,card.right-pad,bb);
-            button(c,minus,"−1",blue,Color.WHITE);
-            button(c,plus,"+1",yellow,Color.BLACK);
-
-            if (which==1) { minus1.set(minus); plus1.set(plus); }
-            else { minus2.set(minus); plus2.set(plus); }
-        }
-
-        private void panel(Canvas c, RectF r, int fill, int stroke, float sw) {
-            p.setStyle(Paint.Style.FILL);
-            p.setColor(fill);
-            c.drawRoundRect(r,dp(16),dp(16),p);
-            p.setStyle(Paint.Style.STROKE);
-            p.setStrokeWidth(sw);
-            p.setColor(stroke);
-            c.drawRoundRect(r,dp(16),dp(16),p);
-            p.setStyle(Paint.Style.FILL);
-        }
-
-        private void button(Canvas c, RectF r, String s, int fill, int text) {
-            p.setColor(fill);
-            c.drawRoundRect(r,dp(14),dp(14),p);
-            drawText(c,s,r.centerX(),r.centerY()+getHeight()*.012f,getHeight()*.032f,text,Paint.Align.CENTER);
-        }
-
-        private void drawText(Canvas c, String s, float x, float y, float size, int color, Paint.Align align) {
-            p.setStyle(Paint.Style.FILL);
-            p.setColor(color);
-            p.setTextSize(size);
-            p.setTextAlign(align);
-            p.setTypeface(android.graphics.Typeface.create("sans",android.graphics.Typeface.BOLD));
-            c.drawText(s,x,y,p);
-        }
-
-        private double average(int score, int innings) {
-            return innings <= 0 ? 0.0 : score/(double)innings;
-        }
-
-        @Override public boolean onTouchEvent(MotionEvent e) {
-            if (e.getAction()!=MotionEvent.ACTION_UP) return true;
-            float x=e.getX(), y=e.getY();
-
-            if (plus1.contains(x,y) && currentPlayer==1 && !finished) { addPoint(1); return true; }
-            if (plus2.contains(x,y) && currentPlayer==2 && !finished) { addPoint(2); return true; }
-            if (minus1.contains(x,y) && !finished) { subtract(1); return true; }
-            if (minus2.contains(x,y) && !finished) { subtract(2); return true; }
-            if (endTurn.contains(x,y) && !finished) { finishTurn(); return true; }
-            if (pause.contains(x,y)) {
-                paused=!paused; lastTick=System.currentTimeMillis(); invalidate(); return true;
-            }
-            if (undo.contains(x,y)) { undo(); return true; }
-            if (newGame.contains(x,y)) { showNewGame(); return true; }
-            if (timer.contains(x,y) && !finished) { save(); resetTimer(); return true; }
-            return true;
-        }
-
-        private void addPoint(int player) {
-            save();
-            if (player==1) score1++; else score2++;
-            currentRun++;
-            if (player==1) maxRun1=Math.max(maxRun1,currentRun); else maxRun2=Math.max(maxRun2,currentRun);
-            resetTimer();
-            int s = player==1 ? score1 : score2;
-            if (s>=target) {
-                finished=true; paused=true; invalidate(); showWinner(player);
-            }
-        }
-
-        private void subtract(int player) {
-            int s = player==1 ? score1 : score2;
-            if (s<=0) return;
-            save();
-            if (player==1) score1--; else score2--;
-            if (player==currentPlayer && currentRun>0) currentRun--;
-            invalidate();
-        }
-
-        private void finishTurn() {
-            save();
-            if (currentPlayer==1) {
-                maxRun1=Math.max(maxRun1,currentRun);
-                currentPlayer=2;
-                innings2++;
-            } else {
-                maxRun2=Math.max(maxRun2,currentRun);
-                currentPlayer=1;
-                innings1++;
-            }
-            currentRun=0;
-            resetTimer();
-        }
-
-        private void resetTimer() {
-            seconds=shotTime;
-            paused=false;
-            lastTick=System.currentTimeMillis();
-            invalidate();
-        }
-
-        private void save() {
-            history.push(new State(player1,player2,score1,score2,innings1,innings2,maxRun1,maxRun2,currentRun,
-                    currentPlayer,target,shotTime,seconds,paused,finished));
-            while (history.size()>50) history.removeLast();
-        }
-
-        private void undo() {
-            if (history.isEmpty()) return;
-            State s=history.pop();
-            player1=s.player1; player2=s.player2;
-            score1=s.score1; score2=s.score2;
-            innings1=s.innings1; innings2=s.innings2;
-            maxRun1=s.maxRun1; maxRun2=s.maxRun2;
-            currentRun=s.currentRun; currentPlayer=s.currentPlayer;
-            target=s.target; shotTime=s.shotTime; seconds=s.seconds;
-            paused=s.paused; finished=s.finished;
-            lastTick=System.currentTimeMillis();
-            invalidate();
-        }
-
-        private void showWinner(int player) {
-            String name = player==1 ? player1 : player2;
-            new AlertDialog.Builder(MainActivity.this)
-                .setTitle("Distancia alcanzada")
-                .setMessage(name+" llegó a "+target+" puntos.\n\nMarcador: "+score1+" - "+score2)
-                .setPositiveButton("Cerrar",null)
-                .setNeutralButton("Continuar",(d,w)->{ finished=false; paused=false; resetTimer(); })
-                .setNegativeButton("Nuevo partido",(d,w)->showNewGame())
-                .show();
-        }
-
-        private EditText edit(String value, int type) {
-            EditText e=new EditText(MainActivity.this);
-            e.setText(value);
-            e.setTextSize(19);
-            e.setSingleLine(true);
-            e.setInputType(type);
-            e.setPadding((int)dp(10),(int)dp(7),(int)dp(10),(int)dp(7));
-            return e;
-        }
-
-        private TextView label(String s) {
-            TextView t=new TextView(MainActivity.this);
-            t.setText(s);
-            t.setTextSize(15);
-            t.setTextColor(Color.DKGRAY);
-            t.setPadding(0,(int)dp(8),0,0);
-            return t;
-        }
-
-        private void showNewGame() {
-            LinearLayout box=new LinearLayout(MainActivity.this);
-            box.setOrientation(LinearLayout.VERTICAL);
-            box.setPadding((int)dp(22),(int)dp(8),(int)dp(22),0);
-            box.setGravity(Gravity.CENTER_HORIZONTAL);
-
-            EditText p1=edit(player1,InputType.TYPE_CLASS_TEXT);
-            EditText p2=edit(player2,InputType.TYPE_CLASS_TEXT);
-            EditText tg=edit(String.valueOf(target),InputType.TYPE_CLASS_NUMBER);
-            EditText st=edit(String.valueOf(shotTime),InputType.TYPE_CLASS_NUMBER);
-
-            box.addView(label("Jugador 1")); box.addView(p1);
-            box.addView(label("Jugador 2")); box.addView(p2);
-            box.addView(label("Distancia del partido")); box.addView(tg);
-            box.addView(label("Segundos por tiro")); box.addView(st);
-
-            AlertDialog d=new AlertDialog.Builder(MainActivity.this)
+        AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Nuevo partido")
                 .setView(box)
-                .setNegativeButton("Cancelar",null)
-                .setPositiveButton("Iniciar",null)
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Iniciar", null)
                 .create();
 
-            d.setOnShowListener(v->d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v2->{
-                String n1=p1.getText().toString().trim();
-                String n2=p2.getText().toString().trim();
-                int nt=30, ns=40;
-                try { nt=Integer.parseInt(tg.getText().toString().trim()); } catch(Exception ignored) {}
-                try { ns=Integer.parseInt(st.getText().toString().trim()); } catch(Exception ignored) {}
-                nt=Math.max(1,Math.min(999,nt));
-                ns=Math.max(5,Math.min(300,ns));
-                if (n1.isEmpty()) n1="Jugador 1";
-                if (n2.isEmpty()) n2="Jugador 2";
+        dialog.setOnShowListener(v -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v2 -> {
+            try {
+                String n1 = p1.getText().toString().trim();
+                String n2 = p2.getText().toString().trim();
+                int d = Integer.parseInt(distance.getText().toString().trim());
+                int s = Integer.parseInt(time.getText().toString().trim());
 
-                player1=n1; player2=n2; target=nt; shotTime=ns;
-                score1=0; score2=0; innings1=1; innings2=0;
-                maxRun1=0; maxRun2=0; currentRun=0; currentPlayer=1;
-                finished=false; history.clear(); resetTimer(); d.dismiss();
-            }));
-            d.show();
-        }
+                player1 = n1.isEmpty() ? "Jugador 1" : n1;
+                player2 = n2.isEmpty() ? "Jugador 2" : n2;
+                target = Math.max(1, Math.min(999, d));
+                shotSeconds = Math.max(5, Math.min(300, s));
+
+                score1 = score2 = 0;
+                innings1 = 1;
+                innings2 = 0;
+                maxRun1 = maxRun2 = 0;
+                currentRun = 0;
+                currentPlayer = 1;
+                secondsLeft = shotSeconds;
+                paused = false;
+                lastTick = System.currentTimeMillis();
+                refresh();
+                dialog.dismiss();
+            } catch (Throwable ignored) {
+            }
+        }));
+
+        dialog.show();
     }
 
-    private static class State {
-        final String player1,player2;
-        final int score1,score2,innings1,innings2,maxRun1,maxRun2,currentRun,currentPlayer,target,shotTime,seconds;
-        final boolean paused,finished;
-        State(String p1,String p2,int s1,int s2,int i1,int i2,int m1,int m2,int run,int cp,int target,int shot,int sec,boolean paused,boolean finished) {
-            this.player1=p1; this.player2=p2; this.score1=s1; this.score2=s2;
-            this.innings1=i1; this.innings2=i2; this.maxRun1=m1; this.maxRun2=m2;
-            this.currentRun=run; this.currentPlayer=cp; this.target=target; this.shotTime=shot;
-            this.seconds=sec; this.paused=paused; this.finished=finished;
-        }
+    private EditText field(String value, boolean numeric) {
+        EditText e = new EditText(this);
+        e.setText(value);
+        e.setSingleLine(true);
+        e.setTextSize(18);
+        if (numeric) e.setInputType(InputType.TYPE_CLASS_NUMBER);
+        return e;
+    }
+
+    private TextView label(String value) {
+        TextView t = text(value, 14, Color.DKGRAY, false);
+        t.setPadding(0, dp(6), 0, 0);
+        return t;
+    }
+
+    private void showFallback(Throwable error) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(20), dp(20), dp(20));
+        box.setBackgroundColor(Color.WHITE);
+
+        TextView title = text("Billar Azteca Marcador", 24, Color.BLACK, true);
+        TextView msg = text("La interfaz principal no pudo iniciar.\n\n" + error.getClass().getSimpleName() + ": " + String.valueOf(error.getMessage()),
+                16, Color.DKGRAY, false);
+
+        box.addView(title);
+        box.addView(msg);
+        setContentView(box);
     }
 }
