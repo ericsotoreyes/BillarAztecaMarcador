@@ -23,3 +23,11 @@ Aplicación Android táctil para llevar el marcador de billar en Billar Azteca C
 - Deshacer
 - Nuevo partido
 - Interfaz horizontal para pantalla táctil
+
+
+## v5
+
+- Logo real integrado directamente como recurso Android en el repositorio.
+- Logo visible de 48 dp en el encabezado.
+- Mejor alineación vertical y separación con el título.
+- La lógica del marcador y cronómetro se mantiene sin cambios.
