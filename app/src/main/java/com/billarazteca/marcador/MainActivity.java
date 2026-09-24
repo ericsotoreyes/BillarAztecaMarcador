@@ -226,10 +226,29 @@ public class MainActivity extends Activity {
         titleParams.setMargins(dp(10), 0, 0, 0);
         header.addView(title, titleParams);
 
-        TextView badge = text("MARCADOR", 11, Color.BLACK, true);
-        badge.setGravity(Gravity.CENTER);
-        badge.setBackground(roundRect(Color.argb(32, 0, 0, 0), Color.argb(55, 0, 0, 0), 1, 14));
-        header.addView(badge, new LinearLayout.LayoutParams(dp(82), dp(27)));
+        Button closeButton = new Button(this);
+        closeButton.setText("×");
+        closeButton.setTextSize(24);
+        closeButton.setTextColor(Color.WHITE);
+        closeButton.setTypeface(Typeface.DEFAULT_BOLD);
+        closeButton.setAllCaps(false);
+        closeButton.setIncludeFontPadding(false);
+        closeButton.setGravity(Gravity.CENTER);
+        closeButton.setPadding(0, 0, 0, dp(2));
+        closeButton.setMinHeight(0);
+        closeButton.setMinimumHeight(0);
+        closeButton.setBackground(roundRect(
+                Color.rgb(210, 38, 45),
+                Color.rgb(135, 20, 25),
+                1,
+                4
+        ));
+        try {
+            closeButton.setStateListAnimator(null);
+        } catch (Throwable ignored) {
+        }
+        closeButton.setOnClickListener(v -> confirmExitApp());
+        header.addView(closeButton, new LinearLayout.LayoutParams(dp(52), dp(30)));
 
         return header;
     }
@@ -952,6 +971,18 @@ public class MainActivity extends Activity {
         );
 
         dialog.show();
+    }
+
+    private void confirmExitApp() {
+        new AlertDialog.Builder(this)
+                .setTitle("Cerrar aplicación")
+                .setMessage("¿Deseas cerrar el marcador?")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Cerrar", (dialog, which) -> {
+                    handler.removeCallbacks(timerRunnable);
+                    finishAndRemoveTask();
+                })
+                .show();
     }
 
     private void requestNewGame() {
