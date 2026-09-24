@@ -17,11 +17,8 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Restore Billar Azteca logo
-        run: |
-          mkdir -p app/src/main/res/drawable
-          cat branding/logo_*.b64 | base64 -d > app/src/main/res/drawable/billar_azteca_logo.png
-          test -s app/src/main/res/drawable/billar_azteca_logo.png
+      - name: Verify embedded Billar Azteca logo
+        run: test -s app/src/main/res/drawable/billar_azteca_logo.png
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -33,5 +30,5 @@ jobs:
       - name: Save APK
         uses: actions/upload-artifact@v4
         with:
-          name: BillarAzteca-Marcador-v4
+          name: BillarAzteca-Marcador-v5
           path: app/build/outputs/apk/debug/app-debug.apk
