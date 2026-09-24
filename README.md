@@ -47,3 +47,12 @@ Cambios exclusivamente visuales sobre Marcothon v1:
 - El botón **FIN DE TURNO** ahora tiene fondo amarillo y texto negro.
 - La lógica y todas las funciones permanecen intactas.
 - Aplicación independiente: `com.clubmarcothon.marcador.v2`.
+
+
+## Marcothon v3
+
+- Basada en Marcothon v2.
+- El rótulo “MARCADOR” de la esquina superior derecha fue reemplazado por un botón rojo con una **X blanca**, estilo ventana de Windows.
+- Al presionar la X, se solicita confirmación antes de cerrar la aplicación.
+- Si se confirma, la app se cierra; si se cancela, continúa normalmente.
+- No se modificó ninguna otra lógica ni función.
