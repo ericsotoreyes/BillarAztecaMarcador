@@ -2,6 +2,7 @@ package com.billarazteca.marcador;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -100,6 +101,12 @@ public class MainActivity extends Activity {
     private boolean useTimer = true;
     private long lastTick = 0L;
 
+    private static final String RECOVERY_PREFS = "billiards_recovery";
+    private boolean recoveryActive = false;
+    private boolean persistenceReady = false;
+    private String lastPersistentCore = "";
+    private int lastPersistedSeconds = -1;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -108,10 +115,17 @@ public class MainActivity extends Activity {
         enableFullscreen();
 
         try {
+            boolean recoveredMatch = restoreSavedMatch();
+            persistenceReady = true;
+
             setContentView(buildUi());
             lastTick = System.currentTimeMillis();
             handler.post(timerRunnable);
             refresh();
+
+            if (recoveredMatch) {
+                handler.post(this::showRecoveryDialog);
+            }
         } catch (Throwable t) {
             showFallback(t);
         }
@@ -124,6 +138,18 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onPause() {
+        savePersistentState(true);
+        super.onPause();
+    }
+
+    @Override
+    protected void onStop() {
+        savePersistentState(true);
+        super.onStop();
+    }
+
+    @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) enableFullscreen();
@@ -131,6 +157,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        savePersistentState(true);
         handler.removeCallbacks(timerRunnable);
         if (toneGenerator != null) {
             try {
@@ -630,6 +657,8 @@ public class MainActivity extends Activity {
                 matchFinished,
                 useTimer
         );
+
+        savePersistentState(false);
     }
 
     private void updateExtensionButton(Button button, int player, int remaining) {
@@ -977,12 +1006,223 @@ public class MainActivity extends Activity {
         dialog.show();
     }
 
+    private SharedPreferences recoveryPrefs() {
+        return getSharedPreferences(RECOVERY_PREFS, MODE_PRIVATE);
+    }
+
+    private boolean restoreSavedMatch() {
+        try {
+            SharedPreferences p = recoveryPrefs();
+            if (!p.getBoolean("has_saved_match", false)) {
+                return false;
+            }
+
+            tableName = p.getString("tableName", "Mesa 1");
+            player1 = p.getString("player1", "Jugador 1");
+            player2 = p.getString("player2", "Jugador 2");
+
+            score1 = p.getInt("score1", 0);
+            score2 = p.getInt("score2", 0);
+            innings1 = p.getInt("innings1", 1);
+            innings2 = p.getInt("innings2", 0);
+            maxRun1 = p.getInt("maxRun1", 0);
+            maxRun2 = p.getInt("maxRun2", 0);
+            currentRun = p.getInt("currentRun", 0);
+            currentPlayer = p.getInt("currentPlayer", 1);
+            target = p.getInt("target", 30);
+            shotSeconds = p.getInt("shotSeconds", 40);
+            secondsLeft = p.getInt("secondsLeft", shotSeconds);
+
+            extensions1 = p.getInt("extensions1", 2);
+            extensions2 = p.getInt("extensions2", 2);
+            extensionArmed = p.getBoolean("extensionArmed", false);
+
+            useTimer = p.getBoolean("useTimer", true);
+            gameStarted = p.getBoolean("gameStarted", false);
+            matchFinished = false;
+
+            paused = useTimer && gameStarted;
+
+            history.clear();
+            recoveryActive = true;
+            lastPersistentCore = "";
+            lastPersistedSeconds = -1;
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private void showRecoveryDialog() {
+        String message;
+        if (useTimer && gameStarted) {
+            message = "Se encontró una partida sin terminar. El marcador fue recuperado y el cronómetro quedó en pausa.";
+        } else {
+            message = "Se encontró una partida sin terminar. ¿Deseas continuar desde donde quedó?";
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("Partida interrumpida detectada")
+                .setMessage(message)
+                .setCancelable(false)
+                .setNegativeButton("Descartar y nueva", (dialog, which) -> {
+                    clearSavedMatch();
+                    resetRecoveredMatch();
+                    showNewGameDialog();
+                })
+                .setPositiveButton("Continuar partida", (dialog, which) -> {
+                    recoveryActive = true;
+                    savePersistentState(true);
+                    refresh();
+                })
+                .show();
+    }
+
+    private void resetRecoveredMatch() {
+        player1 = "Jugador 1";
+        player2 = "Jugador 2";
+        score1 = 0;
+        score2 = 0;
+        innings1 = 1;
+        innings2 = 0;
+        maxRun1 = 0;
+        maxRun2 = 0;
+        currentRun = 0;
+        currentPlayer = 1;
+        target = 30;
+        shotSeconds = 40;
+        secondsLeft = 40;
+        extensions1 = 2;
+        extensions2 = 2;
+        extensionArmed = false;
+        paused = false;
+        gameStarted = false;
+        matchFinished = false;
+        useTimer = true;
+        history.clear();
+        recoveryActive = false;
+        lastPersistentCore = "";
+        lastPersistedSeconds = -1;
+        lastTick = System.currentTimeMillis();
+        refresh();
+    }
+
+    private String persistentCoreSnapshot() {
+        return tableName + "\u0001" +
+                player1 + "\u0001" +
+                player2 + "\u0001" +
+                score1 + "\u0001" +
+                score2 + "\u0001" +
+                innings1 + "\u0001" +
+                innings2 + "\u0001" +
+                maxRun1 + "\u0001" +
+                maxRun2 + "\u0001" +
+                currentRun + "\u0001" +
+                currentPlayer + "\u0001" +
+                target + "\u0001" +
+                shotSeconds + "\u0001" +
+                extensions1 + "\u0001" +
+                extensions2 + "\u0001" +
+                extensionArmed + "\u0001" +
+                paused + "\u0001" +
+                gameStarted + "\u0001" +
+                useTimer;
+    }
+
+    private boolean hasMeaningfulMatchState() {
+        return gameStarted ||
+                score1 != 0 ||
+                score2 != 0 ||
+                innings1 != 1 ||
+                innings2 != 0 ||
+                maxRun1 != 0 ||
+                maxRun2 != 0 ||
+                currentRun != 0 ||
+                currentPlayer != 1 ||
+                extensions1 != 2 ||
+                extensions2 != 2 ||
+                !"Jugador 1".equals(player1) ||
+                !"Jugador 2".equals(player2) ||
+                target != 30 ||
+                shotSeconds != 40 ||
+                !useTimer;
+    }
+
+    private void savePersistentState(boolean force) {
+        if (!persistenceReady) return;
+
+        if (matchFinished) {
+            clearSavedMatch();
+            return;
+        }
+
+        if (!recoveryActive && hasMeaningfulMatchState()) {
+            recoveryActive = true;
+        }
+
+        if (!recoveryActive) return;
+
+        String core = persistentCoreSnapshot();
+        boolean coreChanged = !core.equals(lastPersistentCore);
+        boolean timerCheckpoint =
+                lastPersistedSeconds < 0 ||
+                Math.abs(secondsLeft - lastPersistedSeconds) >= 5 ||
+                (useTimer && secondsLeft <= 10);
+
+        if (!force && !coreChanged && !timerCheckpoint) {
+            return;
+        }
+
+        SharedPreferences.Editor e = recoveryPrefs().edit()
+                .putBoolean("has_saved_match", true)
+                .putString("tableName", tableName)
+                .putString("player1", player1)
+                .putString("player2", player2)
+                .putInt("score1", score1)
+                .putInt("score2", score2)
+                .putInt("innings1", innings1)
+                .putInt("innings2", innings2)
+                .putInt("maxRun1", maxRun1)
+                .putInt("maxRun2", maxRun2)
+                .putInt("currentRun", currentRun)
+                .putInt("currentPlayer", currentPlayer)
+                .putInt("target", target)
+                .putInt("shotSeconds", shotSeconds)
+                .putInt("secondsLeft", secondsLeft)
+                .putInt("extensions1", extensions1)
+                .putInt("extensions2", extensions2)
+                .putBoolean("extensionArmed", extensionArmed)
+                .putBoolean("paused", paused)
+                .putBoolean("gameStarted", gameStarted)
+                .putBoolean("useTimer", useTimer);
+
+        if (force || coreChanged) {
+            e.commit();
+        } else {
+            e.apply();
+        }
+
+        lastPersistentCore = core;
+        lastPersistedSeconds = secondsLeft;
+    }
+
+    private void clearSavedMatch() {
+        try {
+            recoveryPrefs().edit().clear().commit();
+        } catch (Throwable ignored) {
+        }
+        recoveryActive = false;
+        lastPersistentCore = "";
+        lastPersistedSeconds = -1;
+    }
+
     private void confirmExitApp() {
         new AlertDialog.Builder(this)
                 .setTitle("Cerrar aplicación")
                 .setMessage("¿Deseas cerrar el marcador?")
                 .setNegativeButton("Cancelar", null)
                 .setPositiveButton("Cerrar", (dialog, which) -> {
+                    savePersistentState(true);
                     handler.removeCallbacks(timerRunnable);
                     finishAndRemoveTask();
                 })
@@ -1014,6 +1254,9 @@ public class MainActivity extends Activity {
     }
 
     private void showWinner(int player) {
+        recoveryActive = false;
+        clearSavedMatch();
+
         String winner = player == 1 ? player1 : player2;
 
         String finalNote = useTimer
@@ -1113,6 +1356,10 @@ public class MainActivity extends Activity {
                         matchFinished = false;
                         history.clear();
                         lastTick = System.currentTimeMillis();
+
+                        recoveryActive = true;
+                        lastPersistentCore = "";
+                        lastPersistedSeconds = -1;
 
                         refresh();
                         dialog.dismiss();
