@@ -43,3 +43,17 @@ La v8 conserva exactamente el diseño y la lógica de la v7, pero reemplaza el P
 - Ya no se reinicia el reloj después de la carambola ganadora.
 - Se eliminó la opción “Continuar” del aviso de partido terminado para evitar que el cronómetro vuelva a correr accidentalmente.
 - Desde el aviso final se puede cerrar o iniciar un nuevo partido.
+
+
+## v11
+
+- Basada en la v10 estable.
+- Al abrir la app, el cronómetro permanece detenido.
+- El botón central de control muestra “INICIAR PARTIDA” hasta que el operador decide comenzar.
+- Antes de iniciar se pueden capturar o editar mesa, jugadores, distancia y tiempo sin que corra el reloj.
+- Al pulsar “INICIAR PARTIDA”, el cronómetro comienza desde el tiempo configurado.
+- Después de iniciar, ese mismo control funciona como Pausa / Reanudar.
+- Al preparar un nuevo partido, la app vuelve a quedar en estado LISTO y el reloj permanece detenido.
+- Al llegar el cronómetro a cero se reproduce un beep de alerta.
+- Si había una extensión activa, suena el beep al llegar a cero y luego el reloj se reinicia automáticamente una vez.
+- El estado del cronómetro muestra LISTO antes de empezar y FINAL al terminar la partida.
