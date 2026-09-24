@@ -981,12 +981,16 @@ public class MainActivity extends Activity {
     private void showWinner(int player) {
         String winner = player == 1 ? player1 : player2;
 
+        String finalNote = useTimer
+                ? "\n\nEl cronómetro quedó detenido."
+                : "\n\nPartida jugada sin cronómetro.";
+
         new AlertDialog.Builder(this)
                 .setTitle("Partido terminado")
                 .setMessage(
                         winner + " alcanzó " + target + " puntos.\n\n" +
                         "Marcador final: " + score1 + " - " + score2 +
-                        "\n\nEl cronómetro quedó detenido."
+                        finalNote
                 )
                 .setPositiveButton("Cerrar", null)
                 .setNegativeButton("Nuevo partido", (dialog, which) -> showNewGameDialog())
