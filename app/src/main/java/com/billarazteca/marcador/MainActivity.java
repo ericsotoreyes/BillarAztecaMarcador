@@ -602,13 +602,16 @@ public class MainActivity extends Activity {
         }
 
         extensionArmed = false;
-        resetTimerInternal();
 
         if ((player == 1 ? score1 : score2) >= target) {
             paused = true;
+            lastTick = System.currentTimeMillis();
             refresh();
             showWinner(player);
+            return;
         }
+
+        resetTimerInternal();
     }
 
     private void subtractPoint(int player) {
@@ -854,14 +857,11 @@ public class MainActivity extends Activity {
                 .setTitle("Partido terminado")
                 .setMessage(
                         winner + " alcanzó " + target + " puntos.\n\n" +
-                        "Marcador final: " + score1 + " - " + score2
+                        "Marcador final: " + score1 + " - " + score2 +
+                        "\n\nEl cronómetro quedó detenido."
                 )
                 .setPositiveButton("Cerrar", null)
-                .setNeutralButton("Continuar", (dialog, which) -> {
-                    paused = false;
-                    resetTimerInternal();
-                })
-                .setNegativeButton("Nuevo partido", (dialog, which) -> requestNewGame())
+                .setNegativeButton("Nuevo partido", (dialog, which) -> showNewGameDialog())
                 .show();
     }
 
