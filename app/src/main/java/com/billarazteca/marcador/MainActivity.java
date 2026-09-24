@@ -13,6 +13,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
@@ -21,6 +22,7 @@ import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -34,18 +36,20 @@ public class MainActivity extends Activity {
     private static final int BRAND_BLUE = Color.rgb(10, 43, 145);
     private static final int BG_TOP = Color.rgb(9, 16, 24);
     private static final int BG_BOTTOM = Color.rgb(14, 25, 36);
-    private static final int PANEL = Color.rgb(15, 24, 34);
     private static final int PANEL_DARK = Color.rgb(8, 14, 21);
     private static final int BORDER = Color.rgb(53, 68, 84);
     private static final int MUTED = Color.rgb(174, 185, 198);
     private static final int ORANGE = Color.rgb(255, 151, 28);
     private static final int RED = Color.rgb(236, 64, 64);
+    private static final int LIGHT = Color.rgb(232, 236, 241);
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Deque<State> history = new ArrayDeque<>();
 
     private LinearLayout panel1;
     private LinearLayout panel2;
+    private TextView tableView;
+    private TextView matchView;
     private TextView name1View;
     private TextView name2View;
     private TextView active1View;
@@ -58,13 +62,16 @@ public class MainActivity extends Activity {
     private TextView run2View;
     private TextView inningView;
     private TextView activeView;
-    private TextView matchView;
     private TimerRingView timerView;
     private Button pauseButton;
     private Button undoButton;
+    private Button extension1Button;
+    private Button extension2Button;
 
+    private String tableName = "Mesa 1";
     private String player1 = "Jugador 1";
     private String player2 = "Jugador 2";
+
     private int score1 = 0;
     private int score2 = 0;
     private int innings1 = 1;
@@ -76,6 +83,11 @@ public class MainActivity extends Activity {
     private int target = 30;
     private int shotSeconds = 40;
     private int secondsLeft = 40;
+
+    private int extensions1 = 2;
+    private int extensions2 = 2;
+    private boolean extensionArmed = false;
+
     private boolean paused = false;
     private long lastTick = 0L;
 
@@ -212,12 +224,15 @@ public class MainActivity extends Activity {
         box.setGravity(Gravity.CENTER);
         box.setPadding(0, dp(2), 0, dp(1));
 
-        TextView mesa = text("Mesa 1", 22, Color.WHITE, true);
-        mesa.setGravity(Gravity.CENTER);
-        matchView = text("Partido a 30", 13, MUTED, false);
-        matchView.setGravity(Gravity.CENTER);
+        tableView = text(tableName, 22, Color.WHITE, true);
+        tableView.setGravity(Gravity.CENTER);
+        tableView.setOnClickListener(v -> editTableName());
 
-        box.addView(mesa, new LinearLayout.LayoutParams(
+        matchView = text("Partido a " + target, 13, MUTED, false);
+        matchView.setGravity(Gravity.CENTER);
+        matchView.setOnClickListener(v -> editTarget());
+
+        box.addView(tableView, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.25f));
         box.addView(matchView, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, .75f));
@@ -233,13 +248,36 @@ public class MainActivity extends Activity {
 
         TextView name = text(first ? player1 : player2, 19, Color.WHITE, true);
         name.setGravity(Gravity.CENTER);
+        name.setSingleLine(true);
+        name.setAutoSizeTextTypeUniformWithConfiguration(
+                11, 19, 1, TypedValue.COMPLEX_UNIT_SP
+        );
+        name.setOnClickListener(v -> editPlayerName(first ? 1 : 2));
+
         panel.addView(name, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(28)));
 
+        LinearLayout statusRow = new LinearLayout(this);
+        statusRow.setOrientation(LinearLayout.HORIZONTAL);
+        statusRow.setGravity(Gravity.CENTER_VERTICAL);
+
         TextView active = text("● EN TURNO", 10, YELLOW, true);
         active.setGravity(Gravity.CENTER);
-        panel.addView(active, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(16)));
+
+        Button extension = styledButton("Extensión · 2", LIGHT, Color.rgb(14, 21, 29), 10);
+        extension.setOnClickListener(v -> requestExtension(first ? 1 : 2));
+
+        LinearLayout.LayoutParams activeParams = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
+        LinearLayout.LayoutParams extParams = new LinearLayout.LayoutParams(
+                dp(96), LinearLayout.LayoutParams.MATCH_PARENT);
+        extParams.setMargins(dp(4), 0, 0, 0);
+
+        statusRow.addView(active, activeParams);
+        statusRow.addView(extension, extParams);
+
+        panel.addView(statusRow, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(26)));
 
         TextView score = text("0", 62, Color.WHITE, true);
         score.setGravity(Gravity.CENTER);
@@ -257,6 +295,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams statParams1 = new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
         statParams1.setMargins(0, 0, dp(3), 0);
+
         LinearLayout.LayoutParams statParams2 = new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
         statParams2.setMargins(dp(3), 0, 0, 0);
@@ -276,18 +315,21 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams leftButton = new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
         leftButton.setMargins(0, dp(4), dp(3), 0);
+
         LinearLayout.LayoutParams rightButton = new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
         rightButton.setMargins(dp(3), dp(4), 0, 0);
 
         buttons.addView(minus, leftButton);
         buttons.addView(plus, rightButton);
+
         panel.addView(buttons, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
 
         if (first) {
             name1View = name;
             active1View = active;
+            extension1Button = extension;
             score1View = score;
             avg1View = avg;
             run1View = run;
@@ -296,6 +338,7 @@ public class MainActivity extends Activity {
         } else {
             name2View = name;
             active2View = active;
+            extension2Button = extension;
             score2View = score;
             avg2View = avg;
             run2View = run;
@@ -358,9 +401,14 @@ public class MainActivity extends Activity {
         timerParams.gravity = Gravity.CENTER_HORIZONTAL;
         timerParams.setMargins(0, dp(5), 0, 0);
         center.addView(timerView, timerParams);
-        timerView.setOnClickListener(v -> resetTimerManual());
 
-        activeView = text("En turno: Jugador 1", 12, YELLOW, true);
+        timerView.setOnClickListener(v -> resetTimerManual());
+        timerView.setOnLongClickListener(v -> {
+            editShotSeconds();
+            return true;
+        });
+
+        activeView = text("En turno: Jugador 1", 11, YELLOW, true);
         activeView.setGravity(Gravity.CENTER);
         center.addView(activeView, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
@@ -373,17 +421,17 @@ public class MainActivity extends Activity {
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setPadding(0, dp(4), 0, 0);
 
-        undoButton = styledButton("↶  Deshacer", Color.rgb(232, 236, 241), Color.rgb(14, 21, 29), 14);
+        undoButton = styledButton("↶  Deshacer", Color.rgb(150, 156, 164), Color.rgb(14, 21, 29), 14);
         Button endTurn = styledButton("FIN DE TURNO", BLUE, Color.WHITE, 19);
-        pauseButton = styledButton("Pausa", Color.rgb(232, 236, 241), Color.rgb(14, 21, 29), 14);
-        Button reset = styledButton("Reiniciar reloj", Color.rgb(232, 236, 241), Color.rgb(14, 21, 29), 13);
-        Button newGame = styledButton("Nuevo partido", Color.rgb(232, 236, 241), Color.rgb(14, 21, 29), 13);
+        pauseButton = styledButton("Pausa", LIGHT, Color.rgb(14, 21, 29), 14);
+        Button reset = styledButton("Reiniciar reloj", LIGHT, Color.rgb(14, 21, 29), 13);
+        Button newGame = styledButton("Nuevo partido", LIGHT, Color.rgb(14, 21, 29), 13);
 
         undoButton.setOnClickListener(v -> undo());
         endTurn.setOnClickListener(v -> finishTurn());
         pauseButton.setOnClickListener(v -> togglePause());
         reset.setOnClickListener(v -> resetTimerManual());
-        newGame.setOnClickListener(v -> showNewGameDialog());
+        newGame.setOnClickListener(v -> requestNewGame());
 
         actions.addView(undoButton, actionParams(1.0f));
         actions.addView(endTurn, actionParams(2.15f));
@@ -452,19 +500,28 @@ public class MainActivity extends Activity {
     private void refresh() {
         if (score1View == null) return;
 
+        tableView.setText(tableName);
+        matchView.setText("Partido a " + target);
+
         name1View.setText(player1);
         name2View.setText(player2);
+
         score1View.setText(String.valueOf(score1));
         score2View.setText(String.valueOf(score2));
 
-        avg1View.setText(String.format(Locale.US, "%.3f", innings1 > 0 ? score1 / (double) innings1 : 0.0));
-        avg2View.setText(String.format(Locale.US, "%.3f", innings2 > 0 ? score2 / (double) innings2 : 0.0));
+        avg1View.setText(String.format(
+                Locale.US, "%.3f",
+                innings1 > 0 ? score1 / (double) innings1 : 0.0
+        ));
+        avg2View.setText(String.format(
+                Locale.US, "%.3f",
+                innings2 > 0 ? score2 / (double) innings2 : 0.0
+        ));
 
         run1View.setText(String.valueOf(maxRun1));
         run2View.setText(String.valueOf(maxRun2));
 
         inningView.setText(String.valueOf(Math.max(innings1, innings2)));
-        matchView.setText("Partido a " + target);
 
         panel1.setBackground(playerBackground(currentPlayer == 1));
         panel2.setBackground(playerBackground(currentPlayer == 2));
@@ -473,11 +530,61 @@ public class MainActivity extends Activity {
         active2View.setVisibility(currentPlayer == 2 ? View.VISIBLE : View.INVISIBLE);
 
         activeView.setText("En turno: " + (currentPlayer == 1 ? player1 : player2));
+
+        updateExtensionButton(extension1Button, 1, extensions1);
+        updateExtensionButton(extension2Button, 2, extensions2);
+
         pauseButton.setText(paused ? "Reanudar" : "Pausa");
+        if (paused) {
+            pauseButton.setTextColor(Color.BLACK);
+            pauseButton.setBackground(roundRect(YELLOW, Color.argb(65, 0, 0, 0), 1, 12));
+        } else {
+            pauseButton.setTextColor(Color.rgb(14, 21, 29));
+            pauseButton.setBackground(roundRect(LIGHT, Color.argb(50, 255, 255, 255), 1, 12));
+        }
+
         undoButton.setEnabled(!history.isEmpty());
         undoButton.setAlpha(history.isEmpty() ? .55f : 1f);
 
-        timerView.setTimer(secondsLeft, shotSeconds, paused);
+        timerView.setTimer(secondsLeft, shotSeconds, paused, extensionArmed);
+    }
+
+    private void updateExtensionButton(Button button, int player, int remaining) {
+        if (button == null) return;
+
+        boolean isCurrent = player == currentPlayer;
+        boolean armedHere = isCurrent && extensionArmed;
+
+        if (armedHere) {
+            button.setText("EXT. ACTIVA");
+            button.setEnabled(false);
+            button.setTextColor(Color.BLACK);
+            button.setBackground(roundRect(ORANGE, Color.argb(70, 0, 0, 0), 1, 10));
+            button.setAlpha(1f);
+            return;
+        }
+
+        if (remaining <= 0) {
+            button.setText("Sin ext.");
+            button.setEnabled(false);
+            button.setTextColor(Color.rgb(80, 85, 92));
+            button.setBackground(roundRect(Color.rgb(185, 189, 194), Color.argb(30, 0, 0, 0), 1, 10));
+            button.setAlpha(.75f);
+            return;
+        }
+
+        button.setText("Extensión · " + remaining);
+        button.setEnabled(isCurrent);
+
+        if (isCurrent) {
+            button.setTextColor(Color.BLACK);
+            button.setBackground(roundRect(YELLOW, Color.argb(70, 0, 0, 0), 1, 10));
+            button.setAlpha(1f);
+        } else {
+            button.setTextColor(Color.rgb(45, 50, 58));
+            button.setBackground(roundRect(Color.rgb(205, 209, 214), Color.argb(30, 0, 0, 0), 1, 10));
+            button.setAlpha(.65f);
+        }
     }
 
     private void addPoint(int player) {
@@ -494,6 +601,7 @@ public class MainActivity extends Activity {
             maxRun2 = Math.max(maxRun2, currentRun);
         }
 
+        extensionArmed = false;
         resetTimerInternal();
 
         if ((player == 1 ? score1 : score2) >= target) {
@@ -524,6 +632,8 @@ public class MainActivity extends Activity {
         pushState();
 
         currentRun = 0;
+        extensionArmed = false;
+
         if (currentPlayer == 1) {
             currentPlayer = 2;
             innings2++;
@@ -535,6 +645,47 @@ public class MainActivity extends Activity {
         resetTimerInternal();
     }
 
+    private void requestExtension(int player) {
+        if (player != currentPlayer) return;
+
+        int remaining = player == 1 ? extensions1 : extensions2;
+
+        if (extensionArmed) {
+            Toast.makeText(this, "Ya hay una extensión activada", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if (remaining <= 0) {
+            Toast.makeText(this, "Este jugador ya usó sus 2 extensiones", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        pushState();
+
+        if (player == 1) {
+            extensions1--;
+        } else {
+            extensions2--;
+        }
+
+        if (secondsLeft <= 0) {
+            secondsLeft = shotSeconds;
+            extensionArmed = false;
+            paused = false;
+            lastTick = System.currentTimeMillis();
+            Toast.makeText(this, "Extensión aplicada", Toast.LENGTH_SHORT).show();
+        } else {
+            extensionArmed = true;
+            Toast.makeText(
+                    this,
+                    "Extensión activada: al llegar a 0 el reloj reinicia una vez",
+                    Toast.LENGTH_SHORT
+            ).show();
+        }
+
+        refresh();
+    }
+
     private void togglePause() {
         paused = !paused;
         lastTick = System.currentTimeMillis();
@@ -542,6 +693,7 @@ public class MainActivity extends Activity {
     }
 
     private void resetTimerManual() {
+        extensionArmed = false;
         secondsLeft = shotSeconds;
         paused = false;
         lastTick = System.currentTimeMillis();
@@ -555,53 +707,161 @@ public class MainActivity extends Activity {
         refresh();
     }
 
-    private void pushState() {
-        history.push(new State(
-                player1, player2,
-                score1, score2,
-                innings1, innings2,
-                maxRun1, maxRun2,
-                currentRun, currentPlayer,
-                target, shotSeconds,
-                secondsLeft, paused
-        ));
-        while (history.size() > 60) history.removeLast();
+    private void editTableName() {
+        showTextDialog(
+                "Nombre de mesa",
+                tableName,
+                value -> {
+                    tableName = value.isEmpty() ? "Mesa 1" : value;
+                    refresh();
+                }
+        );
     }
 
-    private void undo() {
-        if (history.isEmpty()) return;
-        State s = history.pop();
+    private void editPlayerName(int player) {
+        String current = player == 1 ? player1 : player2;
+        showTextDialog(
+                player == 1 ? "Nombre del jugador 1" : "Nombre del jugador 2",
+                current,
+                value -> {
+                    String finalName = value.isEmpty()
+                            ? (player == 1 ? "Jugador 1" : "Jugador 2")
+                            : value;
 
-        player1 = s.player1;
-        player2 = s.player2;
-        score1 = s.score1;
-        score2 = s.score2;
-        innings1 = s.innings1;
-        innings2 = s.innings2;
-        maxRun1 = s.maxRun1;
-        maxRun2 = s.maxRun2;
-        currentRun = s.currentRun;
-        currentPlayer = s.currentPlayer;
-        target = s.target;
-        shotSeconds = s.shotSeconds;
-        secondsLeft = s.secondsLeft;
-        paused = s.paused;
-        lastTick = System.currentTimeMillis();
+                    if (player == 1) player1 = finalName;
+                    else player2 = finalName;
 
-        refresh();
+                    refresh();
+                }
+        );
+    }
+
+    private void editTarget() {
+        showNumberDialog(
+                "Distancia del partido",
+                target,
+                1,
+                999,
+                value -> {
+                    target = value;
+                    refresh();
+                }
+        );
+    }
+
+    private void editShotSeconds() {
+        showNumberDialog(
+                "Segundos por tiro",
+                shotSeconds,
+                5,
+                300,
+                value -> {
+                    shotSeconds = value;
+                    extensionArmed = false;
+                    resetTimerManual();
+                }
+        );
+    }
+
+    private interface StringConsumer {
+        void accept(String value);
+    }
+
+    private interface IntConsumer {
+        void accept(int value);
+    }
+
+    private void showTextDialog(String title, String current, StringConsumer onSave) {
+        EditText input = field(current, false);
+        input.setSelectAllOnFocus(true);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setView(input)
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Guardar", null)
+                .create();
+
+        dialog.setOnShowListener(v ->
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v2 -> {
+                    onSave.accept(input.getText().toString().trim());
+                    dialog.dismiss();
+                })
+        );
+
+        dialog.show();
+    }
+
+    private void showNumberDialog(
+            String title,
+            int current,
+            int min,
+            int max,
+            IntConsumer onSave
+    ) {
+        EditText input = field(String.valueOf(current), true);
+        input.setSelectAllOnFocus(true);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setView(input)
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Guardar", null)
+                .create();
+
+        dialog.setOnShowListener(v ->
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v2 -> {
+                    try {
+                        int value = Integer.parseInt(input.getText().toString().trim());
+                        value = Math.max(min, Math.min(max, value));
+                        onSave.accept(value);
+                        dialog.dismiss();
+                    } catch (Throwable ignored) {
+                        Toast.makeText(this, "Escribe un número válido", Toast.LENGTH_SHORT).show();
+                    }
+                })
+        );
+
+        dialog.show();
+    }
+
+    private void requestNewGame() {
+        boolean hasProgress =
+                score1 > 0 ||
+                score2 > 0 ||
+                innings1 > 1 ||
+                innings2 > 0 ||
+                extensions1 < 2 ||
+                extensions2 < 2;
+
+        if (!hasProgress) {
+            showNewGameDialog();
+            return;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("Nuevo partido")
+                .setMessage("Se borrará el marcador actual, las entradas y las extensiones utilizadas. ¿Continuar?")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Continuar", (dialog, which) -> showNewGameDialog())
+                .show();
     }
 
     private void showWinner(int player) {
         String winner = player == 1 ? player1 : player2;
+
         new AlertDialog.Builder(this)
                 .setTitle("Partido terminado")
-                .setMessage(winner + " alcanzó " + target + " puntos.\n\nMarcador final: " + score1 + " - " + score2)
+                .setMessage(
+                        winner + " alcanzó " + target + " puntos.\n\n" +
+                        "Marcador final: " + score1 + " - " + score2
+                )
                 .setPositiveButton("Cerrar", null)
                 .setNeutralButton("Continuar", (dialog, which) -> {
                     paused = false;
                     resetTimerInternal();
                 })
-                .setNegativeButton("Nuevo partido", (dialog, which) -> showNewGameDialog())
+                .setNegativeButton("Nuevo partido", (dialog, which) -> requestNewGame())
                 .show();
     }
 
@@ -641,6 +901,7 @@ public class MainActivity extends Activity {
 
                         player1 = n1.isEmpty() ? "Jugador 1" : n1;
                         player2 = n2.isEmpty() ? "Jugador 2" : n2;
+
                         target = Math.max(1, Math.min(999, newTarget));
                         shotSeconds = Math.max(5, Math.min(300, newTime));
 
@@ -653,6 +914,11 @@ public class MainActivity extends Activity {
                         currentRun = 0;
                         currentPlayer = 1;
                         secondsLeft = shotSeconds;
+
+                        extensions1 = 2;
+                        extensions2 = 2;
+                        extensionArmed = false;
+
                         paused = false;
                         history.clear();
                         lastTick = System.currentTimeMillis();
@@ -660,6 +926,7 @@ public class MainActivity extends Activity {
                         refresh();
                         dialog.dismiss();
                     } catch (Throwable ignored) {
+                        Toast.makeText(this, "Revisa la distancia y el tiempo", Toast.LENGTH_SHORT).show();
                     }
                 })
         );
@@ -682,17 +949,76 @@ public class MainActivity extends Activity {
         return t;
     }
 
+    private void pushState() {
+        history.push(new State(
+                player1, player2,
+                score1, score2,
+                innings1, innings2,
+                maxRun1, maxRun2,
+                currentRun, currentPlayer,
+                target, shotSeconds,
+                secondsLeft, paused,
+                extensions1, extensions2,
+                extensionArmed
+        ));
+
+        while (history.size() > 60) {
+            history.removeLast();
+        }
+    }
+
+    private void undo() {
+        if (history.isEmpty()) return;
+
+        State s = history.pop();
+
+        player1 = s.player1;
+        player2 = s.player2;
+        score1 = s.score1;
+        score2 = s.score2;
+        innings1 = s.innings1;
+        innings2 = s.innings2;
+        maxRun1 = s.maxRun1;
+        maxRun2 = s.maxRun2;
+        currentRun = s.currentRun;
+        currentPlayer = s.currentPlayer;
+        target = s.target;
+        shotSeconds = s.shotSeconds;
+        secondsLeft = s.secondsLeft;
+        paused = s.paused;
+        extensions1 = s.extensions1;
+        extensions2 = s.extensions2;
+        extensionArmed = s.extensionArmed;
+
+        lastTick = System.currentTimeMillis();
+        refresh();
+    }
+
     private final Runnable timerRunnable = new Runnable() {
         @Override
         public void run() {
             try {
                 long now = System.currentTimeMillis();
+
                 if (!paused && secondsLeft > 0 && lastTick > 0) {
                     long elapsed = now - lastTick;
+
                     if (elapsed >= 1000L) {
                         int steps = (int) (elapsed / 1000L);
                         secondsLeft = Math.max(0, secondsLeft - steps);
                         lastTick += steps * 1000L;
+
+                        if (secondsLeft == 0 && extensionArmed) {
+                            secondsLeft = shotSeconds;
+                            extensionArmed = false;
+                            lastTick = now;
+                            Toast.makeText(
+                                    MainActivity.this,
+                                    "Extensión: tiempo reiniciado",
+                                    Toast.LENGTH_SHORT
+                            ).show();
+                        }
+
                         refresh();
                     }
                 } else {
@@ -714,8 +1040,8 @@ public class MainActivity extends Activity {
         TextView title = text("Billar Azteca Marcador", 24, Color.BLACK, true);
         TextView msg = text(
                 "La interfaz no pudo iniciar.\n\n" +
-                        error.getClass().getSimpleName() + ": " +
-                        String.valueOf(error.getMessage()),
+                error.getClass().getSimpleName() + ": " +
+                String.valueOf(error.getMessage()),
                 15, Color.DKGRAY, false
         );
 
@@ -728,26 +1054,25 @@ public class MainActivity extends Activity {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
-    private float sp(float value) {
-        return value * getResources().getDisplayMetrics().scaledDensity;
-    }
-
     private class TimerRingView extends View {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final RectF arc = new RectF();
+
         private int seconds = 40;
         private int total = 40;
         private boolean isPaused = false;
+        private boolean isExtensionArmed = false;
 
         TimerRingView() {
             super(MainActivity.this);
             setLayerType(View.LAYER_TYPE_SOFTWARE, null);
         }
 
-        void setTimer(int seconds, int total, boolean paused) {
+        void setTimer(int seconds, int total, boolean paused, boolean extensionArmed) {
             this.seconds = Math.max(0, seconds);
             this.total = Math.max(1, total);
             this.isPaused = paused;
+            this.isExtensionArmed = extensionArmed;
             invalidate();
         }
 
@@ -775,11 +1100,22 @@ public class MainActivity extends Activity {
             paint.setColor(Color.rgb(42, 56, 72));
             canvas.drawArc(arc, -90, 360, false, paint);
 
-            int ringColor = seconds <= 5 ? RED : (seconds <= 10 ? ORANGE : Color.rgb(21, 143, 255));
+            int ringColor;
+            if (seconds == 0) {
+                ringColor = RED;
+            } else if (seconds <= 5) {
+                ringColor = RED;
+            } else if (seconds <= 10) {
+                ringColor = ORANGE;
+            } else {
+                ringColor = Color.rgb(21, 143, 255);
+            }
+
             float fraction = Math.min(1f, Math.max(0f, seconds / (float) total));
+            float sweep = seconds == 0 ? 360f : 360f * fraction;
 
             paint.setColor(ringColor);
-            canvas.drawArc(arc, -90, 360f * fraction, false, paint);
+            canvas.drawArc(arc, -90, sweep, false, paint);
 
             paint.setStyle(Paint.Style.FILL);
             paint.setTextAlign(Paint.Align.CENTER);
@@ -792,9 +1128,23 @@ public class MainActivity extends Activity {
             canvas.drawText(String.valueOf(seconds), cx, numberY, paint);
 
             paint.setTypeface(Typeface.DEFAULT);
-            paint.setTextSize(size * .115f);
-            paint.setColor(isPaused ? YELLOW : MUTED);
-            String sub = isPaused ? "PAUSA" : (seconds == 0 ? "TIEMPO" : "segundos");
+            paint.setTextSize(size * .10f);
+
+            String sub;
+            if (isPaused) {
+                paint.setColor(YELLOW);
+                sub = "PAUSA";
+            } else if (seconds == 0) {
+                paint.setColor(RED);
+                sub = "TIEMPO";
+            } else if (isExtensionArmed) {
+                paint.setColor(ORANGE);
+                sub = "EXTENSIÓN";
+            } else {
+                paint.setColor(MUTED);
+                sub = "segundos";
+            }
+
             canvas.drawText(sub, cx, cy + size * .25f, paint);
         }
     }
@@ -814,15 +1164,28 @@ public class MainActivity extends Activity {
         final int shotSeconds;
         final int secondsLeft;
         final boolean paused;
+        final int extensions1;
+        final int extensions2;
+        final boolean extensionArmed;
 
         State(
-                String player1, String player2,
-                int score1, int score2,
-                int innings1, int innings2,
-                int maxRun1, int maxRun2,
-                int currentRun, int currentPlayer,
-                int target, int shotSeconds,
-                int secondsLeft, boolean paused
+                String player1,
+                String player2,
+                int score1,
+                int score2,
+                int innings1,
+                int innings2,
+                int maxRun1,
+                int maxRun2,
+                int currentRun,
+                int currentPlayer,
+                int target,
+                int shotSeconds,
+                int secondsLeft,
+                boolean paused,
+                int extensions1,
+                int extensions2,
+                boolean extensionArmed
         ) {
             this.player1 = player1;
             this.player2 = player2;
@@ -838,6 +1201,9 @@ public class MainActivity extends Activity {
             this.shotSeconds = shotSeconds;
             this.secondsLeft = secondsLeft;
             this.paused = paused;
+            this.extensions1 = extensions1;
+            this.extensions2 = extensions2;
+            this.extensionArmed = extensionArmed;
         }
     }
 }
