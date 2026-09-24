@@ -4,7 +4,7 @@
         android:allowBackup="true"
         android:icon="@drawable/billar_azteca_logo"
         android:roundIcon="@drawable/billar_azteca_logo"
-        android:label="Billar Azteca Marcador v6"
+        android:label="Billar Azteca Marcador v7"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
