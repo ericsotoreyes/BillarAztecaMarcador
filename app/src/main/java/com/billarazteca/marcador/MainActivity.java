@@ -33,17 +33,17 @@ import java.util.Locale;
 
 public class MainActivity extends Activity {
 
-    private static final int YELLOW = Color.rgb(255, 213, 0);
-    private static final int YELLOW_SOFT = Color.rgb(255, 226, 55);
-    private static final int BLUE = Color.rgb(18, 103, 232);
-    private static final int BRAND_BLUE = Color.rgb(10, 43, 145);
-    private static final int BG_TOP = Color.rgb(9, 16, 24);
-    private static final int BG_BOTTOM = Color.rgb(14, 25, 36);
-    private static final int PANEL_DARK = Color.rgb(8, 14, 21);
+    private static final int YELLOW = Color.rgb(255, 214, 0);
+    private static final int YELLOW_SOFT = Color.rgb(255, 227, 64);
+    private static final int GREEN = Color.rgb(0, 145, 70);
+    private static final int BRAND_RED = Color.rgb(225, 18, 36);
+    private static final int BG_TOP = Color.rgb(0, 0, 0);
+    private static final int BG_BOTTOM = Color.rgb(14, 14, 14);
+    private static final int PANEL_DARK = Color.rgb(8, 8, 8);
     private static final int BORDER = Color.rgb(53, 68, 84);
     private static final int MUTED = Color.rgb(174, 185, 198);
     private static final int ORANGE = Color.rgb(255, 151, 28);
-    private static final int RED = Color.rgb(236, 64, 64);
+    private static final int RED = Color.rgb(225, 18, 36);
     private static final int LIGHT = Color.rgb(232, 236, 241);
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -211,24 +211,24 @@ public class MainActivity extends Activity {
         header.setPadding(dp(8), dp(2), dp(10), dp(2));
         header.setBackground(new GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{YELLOW_SOFT, YELLOW}
+                new int[]{Color.rgb(0, 0, 0), Color.rgb(18, 18, 18)}
         ));
 
         ImageView logo = new ImageView(this);
-        logo.setImageResource(R.drawable.billar_azteca_logo);
+        logo.setImageResource(R.drawable.marcothon_logo);
         logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
         header.addView(logo, new LinearLayout.LayoutParams(dp(46), dp(46)));
 
-        TextView title = text("Billar Azteca Club", 23, BRAND_BLUE, true);
+        TextView title = text("Club Billar Marcothon", 23, Color.WHITE, true);
         title.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
         titleParams.setMargins(dp(10), 0, 0, 0);
         header.addView(title, titleParams);
 
-        TextView badge = text("MARCADOR", 11, Color.BLACK, true);
+        TextView badge = text("MARCADOR", 11, Color.WHITE, true);
         badge.setGravity(Gravity.CENTER);
-        badge.setBackground(roundRect(Color.argb(32, 0, 0, 0), Color.argb(55, 0, 0, 0), 1, 14));
+        badge.setBackground(roundRect(BRAND_RED, GREEN, 1, 14));
         header.addView(badge, new LinearLayout.LayoutParams(dp(82), dp(27)));
 
         return header;
@@ -325,7 +325,7 @@ public class MainActivity extends Activity {
         LinearLayout buttons = new LinearLayout(this);
         buttons.setOrientation(LinearLayout.HORIZONTAL);
 
-        Button minus = styledButton("−1", BLUE, Color.WHITE, 24);
+        Button minus = styledButton("−1", RED, Color.WHITE, 24);
         Button plus = styledButton("+1", YELLOW, Color.BLACK, 24);
 
         LinearLayout.LayoutParams leftButton = new LinearLayout.LayoutParams(
@@ -442,7 +442,7 @@ public class MainActivity extends Activity {
         actions.setPadding(0, dp(4), 0, 0);
 
         undoButton = styledButton("↶  Deshacer", Color.rgb(150, 156, 164), Color.rgb(14, 21, 29), 14);
-        Button endTurn = styledButton("FIN DE TURNO", BLUE, Color.WHITE, 19);
+        Button endTurn = styledButton("FIN DE TURNO", GREEN, Color.WHITE, 19);
         pauseButton = styledButton("INICIAR PARTIDA", YELLOW, Color.BLACK, 14);
         resetButton = styledButton("Reiniciar reloj", LIGHT, Color.rgb(14, 21, 29), 13);
         Button newGame = styledButton("Nuevo partido", LIGHT, Color.rgb(14, 21, 29), 13);
@@ -1211,7 +1211,7 @@ public class MainActivity extends Activity {
         box.setPadding(dp(20), dp(20), dp(20), dp(20));
         box.setBackgroundColor(Color.WHITE);
 
-        TextView title = text("Billar Azteca Marcador", 24, Color.BLACK, true);
+        TextView title = text("Club Billar Marcothon", 24, Color.BLACK, true);
         TextView msg = text(
                 "La interfaz no pudo iniciar.\n\n" +
                 error.getClass().getSimpleName() + ": " +
@@ -1310,7 +1310,7 @@ public class MainActivity extends Activity {
             } else if (seconds <= 10) {
                 ringColor = ORANGE;
             } else {
-                ringColor = Color.rgb(21, 143, 255);
+                ringColor = GREEN;
             }
 
             float fraction = Math.min(1f, Math.max(0f, seconds / (float) total));
