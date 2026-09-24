@@ -170,7 +170,7 @@ public class MainActivity extends Activity {
         ));
 
         root.addView(buildHeader(), new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(50)));
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(54)));
 
         root.addView(buildMatchHeader(), new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
@@ -217,7 +217,7 @@ public class MainActivity extends Activity {
         ImageView logo = new ImageView(this);
         logo.setImageResource(R.drawable.marcothon_logo);
         logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        header.addView(logo, new LinearLayout.LayoutParams(dp(46), dp(46)));
+        header.addView(logo, new LinearLayout.LayoutParams(dp(50), dp(50)));
 
         TextView title = text("Club Billar Marcothon", 23, Color.WHITE, true);
         title.setGravity(Gravity.CENTER_VERTICAL);
@@ -442,7 +442,7 @@ public class MainActivity extends Activity {
         actions.setPadding(0, dp(4), 0, 0);
 
         undoButton = styledButton("↶  Deshacer", Color.rgb(150, 156, 164), Color.rgb(14, 21, 29), 14);
-        Button endTurn = styledButton("FIN DE TURNO", GREEN, Color.WHITE, 19);
+        Button endTurn = styledButton("FIN DE TURNO", YELLOW, Color.BLACK, 19);
         pauseButton = styledButton("INICIAR PARTIDA", YELLOW, Color.BLACK, 14);
         resetButton = styledButton("Reiniciar reloj", LIGHT, Color.rgb(14, 21, 29), 13);
         Button newGame = styledButton("Nuevo partido", LIGHT, Color.rgb(14, 21, 29), 13);
