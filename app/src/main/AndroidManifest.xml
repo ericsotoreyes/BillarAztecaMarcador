@@ -2,7 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
         android:allowBackup="true"
-        android:label="Billar Azteca Marcador v3"
+        android:icon="@drawable/billar_azteca_logo"
+        android:roundIcon="@drawable/billar_azteca_logo"
+        android:label="Billar Azteca Marcador v4"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
