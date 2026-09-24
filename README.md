@@ -64,3 +64,15 @@ Cambios exclusivamente visuales sobre Marcothon v1:
 - Se aumentó al máximo práctico el tamaño del número principal de carambolas de cada jugador.
 - El número utiliza autoajuste de tamaño para aprovechar el espacio disponible sin cortarse ni invadir otros elementos.
 - Se conservan sin cambios nombres, promedio, serie mayor, entrada, cronómetro, controles y toda la lógica del marcador.
+
+
+## Marcothon v5
+
+- Basada en Marcothon v4.
+- Agrega recuperación automática local de partidas interrumpidas.
+- Guarda jugadores, marcador, entradas, series, turno, distancia, extensiones, modo de reloj y tiempo restante.
+- Los cambios importantes se guardan inmediatamente; el tiempo restante se actualiza periódicamente.
+- Si la tablet se apaga, Android cierra la app o hay un corte de energía, al volver a abrir se ofrece continuar o descartar la partida recuperada.
+- Si había cronómetro activo, siempre se recupera en pausa para evitar descontar tiempo mientras la tablet estuvo apagada.
+- Al terminar una partida normalmente se elimina el respaldo.
+- No requiere internet y no cambia la lógica de juego existente.
