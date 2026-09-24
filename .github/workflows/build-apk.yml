@@ -17,7 +17,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Verify embedded Billar Azteca logo
+      - name: Verify transparent Billar Azteca logo
         run: |
           test -s app/src/main/res/drawable/billar_azteca_logo.png
           file app/src/main/res/drawable/billar_azteca_logo.png
@@ -32,5 +32,5 @@ jobs:
       - name: Save APK
         uses: actions/upload-artifact@v4
         with:
-          name: BillarAzteca-Marcador-v6
+          name: BillarAzteca-Marcador-v7
           path: app/build/outputs/apk/debug/app-debug.apk
