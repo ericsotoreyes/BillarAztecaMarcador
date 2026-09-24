@@ -57,3 +57,14 @@ La v8 conserva exactamente el diseño y la lógica de la v7, pero reemplaza el P
 - Al llegar el cronómetro a cero se reproduce un beep de alerta.
 - Si había una extensión activa, suena el beep al llegar a cero y luego el reloj se reinicia automáticamente una vez.
 - El estado del cronómetro muestra LISTO antes de empezar y FINAL al terminar la partida.
+
+
+## v12
+
+- Basada en la v11 estable.
+- Al preparar un nuevo partido se puede elegir “Usar cronómetro” o jugar sin reloj.
+- En modo sin cronómetro, el círculo central muestra “SIN RELOJ”.
+- En modo sin cronómetro no hay cuenta regresiva, beep, pausa, reinicio de reloj ni extensiones.
+- El botón “INICIAR PARTIDA” se conserva para permitir capturar nombres y configuración antes de comenzar.
+- Durante una partida sin cronómetro el botón central indica “PARTIDA EN CURSO”.
+- Puntos, entradas, promedio, serie mayor, fin de turno, deshacer y fin de partida funcionan normalmente en ambos modos.
