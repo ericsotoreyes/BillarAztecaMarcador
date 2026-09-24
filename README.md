@@ -17,3 +17,14 @@ La v6 conserva la lógica del marcador y corrige únicamente la integración del
 - Mejor alineación con “Billar Azteca Club”.
 - Sin reconstrucción del logo durante GitHub Actions.
 - Misma lógica de marcador, cronómetro, promedio, serie mayor, entradas, pausa, deshacer y nuevo partido.
+
+
+## v7
+
+- Basada exactamente en la v6 funcional.
+- Logo real con fondo transparente, sin cuadro exterior.
+- Logo ajustado a 46 dp y mejor alineado con “Billar Azteca Club”.
+- Márgenes del encabezado refinados y distintivo “MARCADOR” suavizado.
+- Alineación de “Mesa 1” / “Partido a 30” ligeramente refinada.
+- Esquinas de paneles unificadas.
+- Sin cambios en la lógica del marcador, cronómetro, turnos, promedio, serie mayor, entradas, deshacer o nuevo partido.
