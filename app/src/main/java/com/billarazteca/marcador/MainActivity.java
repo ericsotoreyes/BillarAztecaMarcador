@@ -20,6 +20,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -66,6 +67,7 @@ public class MainActivity extends Activity {
     private TextView activeView;
     private TimerRingView timerView;
     private Button pauseButton;
+    private Button resetButton;
     private Button undoButton;
     private Button extension1Button;
     private Button extension2Button;
@@ -95,6 +97,7 @@ public class MainActivity extends Activity {
     private boolean paused = false;
     private boolean gameStarted = false;
     private boolean matchFinished = false;
+    private boolean useTimer = true;
     private long lastTick = 0L;
 
     @Override
@@ -415,9 +418,13 @@ public class MainActivity extends Activity {
         timerParams.setMargins(0, dp(5), 0, 0);
         center.addView(timerView, timerParams);
 
-        timerView.setOnClickListener(v -> resetTimerManual());
+        timerView.setOnClickListener(v -> {
+            if (useTimer) resetTimerManual();
+        });
         timerView.setOnLongClickListener(v -> {
-            editShotSeconds();
+            if (useTimer) {
+                editShotSeconds();
+            }
             return true;
         });
 
@@ -437,19 +444,23 @@ public class MainActivity extends Activity {
         undoButton = styledButton("↶  Deshacer", Color.rgb(150, 156, 164), Color.rgb(14, 21, 29), 14);
         Button endTurn = styledButton("FIN DE TURNO", BLUE, Color.WHITE, 19);
         pauseButton = styledButton("INICIAR PARTIDA", YELLOW, Color.BLACK, 14);
-        Button reset = styledButton("Reiniciar reloj", LIGHT, Color.rgb(14, 21, 29), 13);
+        resetButton = styledButton("Reiniciar reloj", LIGHT, Color.rgb(14, 21, 29), 13);
         Button newGame = styledButton("Nuevo partido", LIGHT, Color.rgb(14, 21, 29), 13);
 
         undoButton.setOnClickListener(v -> undo());
         endTurn.setOnClickListener(v -> finishTurn());
         pauseButton.setOnClickListener(v -> handleStartPause());
-        reset.setOnClickListener(v -> resetTimerManual());
+        resetButton.setOnClickListener(v -> {
+            if (useTimer) {
+                resetTimerManual();
+            }
+        });
         newGame.setOnClickListener(v -> requestNewGame());
 
         actions.addView(undoButton, actionParams(1.0f));
         actions.addView(endTurn, actionParams(2.15f));
         actions.addView(pauseButton, actionParams(.85f));
-        actions.addView(reset, actionParams(1.12f));
+        actions.addView(resetButton, actionParams(1.12f));
         actions.addView(newGame, actionParams(1.05f));
 
         return actions;
@@ -564,6 +575,11 @@ public class MainActivity extends Activity {
             pauseButton.setEnabled(true);
             pauseButton.setTextColor(Color.BLACK);
             pauseButton.setBackground(roundRect(YELLOW, Color.argb(65, 0, 0, 0), 1, 12));
+        } else if (!useTimer) {
+            pauseButton.setText("PARTIDA EN CURSO");
+            pauseButton.setEnabled(false);
+            pauseButton.setTextColor(Color.rgb(70, 76, 84));
+            pauseButton.setBackground(roundRect(Color.rgb(205, 209, 214), Color.argb(30, 0, 0, 0), 1, 12));
         } else {
             pauseButton.setEnabled(true);
             pauseButton.setText(paused ? "Reanudar" : "Pausa");
@@ -576,10 +592,21 @@ public class MainActivity extends Activity {
             }
         }
 
+        resetButton.setEnabled(useTimer && gameStarted && !matchFinished);
+        resetButton.setAlpha(useTimer ? 1f : .55f);
+
         undoButton.setEnabled(!history.isEmpty());
         undoButton.setAlpha(history.isEmpty() ? .55f : 1f);
 
-        timerView.setTimer(secondsLeft, shotSeconds, paused, extensionArmed, gameStarted, matchFinished);
+        timerView.setTimer(
+                secondsLeft,
+                shotSeconds,
+                paused,
+                extensionArmed,
+                gameStarted,
+                matchFinished,
+                useTimer
+        );
     }
 
     private void updateExtensionButton(Button button, int player, int remaining) {
@@ -587,8 +614,8 @@ public class MainActivity extends Activity {
 
         boolean isCurrent = player == currentPlayer;
 
-        if (!gameStarted || matchFinished) {
-            button.setText("Extensión · " + remaining);
+        if (!useTimer || !gameStarted || matchFinished) {
+            button.setText(useTimer ? "Extensión · " + remaining : "Sin reloj");
             button.setEnabled(false);
             button.setTextColor(Color.rgb(45, 50, 58));
             button.setBackground(roundRect(Color.rgb(205, 209, 214), Color.argb(30, 0, 0, 0), 1, 10));
@@ -706,6 +733,10 @@ public class MainActivity extends Activity {
     }
 
     private void requestExtension(int player) {
+        if (!useTimer) {
+            Toast.makeText(this, "Esta partida no usa cronómetro", Toast.LENGTH_SHORT).show();
+            return;
+        }
         if (!gameStarted || matchFinished) {
             Toast.makeText(this, "Primero inicia la partida", Toast.LENGTH_SHORT).show();
             return;
@@ -760,11 +791,15 @@ public class MainActivity extends Activity {
             extensionArmed = false;
             lastTick = System.currentTimeMillis();
             refresh();
-            Toast.makeText(this, "Partida iniciada", Toast.LENGTH_SHORT).show();
+            Toast.makeText(
+                    this,
+                    useTimer ? "Partida iniciada" : "Partida iniciada sin cronómetro",
+                    Toast.LENGTH_SHORT
+            ).show();
             return;
         }
 
-        togglePause();
+        if (useTimer) togglePause();
     }
 
     private void togglePause() {
@@ -774,6 +809,7 @@ public class MainActivity extends Activity {
     }
 
     private void resetTimerManual() {
+        if (!useTimer) return;
         extensionArmed = false;
         secondsLeft = shotSeconds;
         if (gameStarted && !matchFinished) {
@@ -784,6 +820,12 @@ public class MainActivity extends Activity {
     }
 
     private void resetTimerInternal() {
+        if (!useTimer) {
+            paused = false;
+            extensionArmed = false;
+            refresh();
+            return;
+        }
         secondsLeft = shotSeconds;
         paused = false;
         lastTick = System.currentTimeMillis();
@@ -833,6 +875,10 @@ public class MainActivity extends Activity {
     }
 
     private void editShotSeconds() {
+        if (!useTimer) {
+            Toast.makeText(this, "Esta partida está configurada sin cronómetro", Toast.LENGTH_SHORT).show();
+            return;
+        }
         showNumberDialog(
                 "Segundos por tiro",
                 shotSeconds,
@@ -957,12 +1003,27 @@ public class MainActivity extends Activity {
         EditText distance = field(String.valueOf(target), true);
         EditText time = field(String.valueOf(shotSeconds), true);
 
+        CheckBox timerOption = new CheckBox(this);
+        timerOption.setText("Usar cronómetro");
+        timerOption.setTextSize(16);
+        timerOption.setChecked(useTimer);
+        timerOption.setPadding(0, dp(8), 0, dp(4));
+
+        time.setEnabled(useTimer);
+        time.setAlpha(useTimer ? 1f : .45f);
+
+        timerOption.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            time.setEnabled(isChecked);
+            time.setAlpha(isChecked ? 1f : .45f);
+        });
+
         box.addView(dialogLabel("Jugador 1"));
         box.addView(p1);
         box.addView(dialogLabel("Jugador 2"));
         box.addView(p2);
         box.addView(dialogLabel("Distancia del partido"));
         box.addView(distance);
+        box.addView(timerOption);
         box.addView(dialogLabel("Segundos por tiro"));
         box.addView(time);
 
@@ -979,13 +1040,20 @@ public class MainActivity extends Activity {
                         String n1 = p1.getText().toString().trim();
                         String n2 = p2.getText().toString().trim();
                         int newTarget = Integer.parseInt(distance.getText().toString().trim());
-                        int newTime = Integer.parseInt(time.getText().toString().trim());
+                        boolean newUseTimer = timerOption.isChecked();
+                        int newTime = shotSeconds;
+                        if (newUseTimer) {
+                            newTime = Integer.parseInt(time.getText().toString().trim());
+                        }
 
                         player1 = n1.isEmpty() ? "Jugador 1" : n1;
                         player2 = n2.isEmpty() ? "Jugador 2" : n2;
 
                         target = Math.max(1, Math.min(999, newTarget));
-                        shotSeconds = Math.max(5, Math.min(300, newTime));
+                        useTimer = newUseTimer;
+                        if (newUseTimer) {
+                            shotSeconds = Math.max(5, Math.min(300, newTime));
+                        }
 
                         score1 = 0;
                         score2 = 0;
@@ -1087,7 +1155,7 @@ public class MainActivity extends Activity {
             try {
                 long now = System.currentTimeMillis();
 
-                if (gameStarted && !matchFinished && !paused && secondsLeft > 0 && lastTick > 0) {
+                if (useTimer && gameStarted && !matchFinished && !paused && secondsLeft > 0 && lastTick > 0) {
                     long elapsed = now - lastTick;
 
                     if (elapsed >= 1000L) {
@@ -1166,6 +1234,7 @@ public class MainActivity extends Activity {
         private boolean isExtensionArmed = false;
         private boolean isGameStarted = false;
         private boolean isMatchFinished = false;
+        private boolean isTimerEnabled = true;
 
         TimerRingView() {
             super(MainActivity.this);
@@ -1178,7 +1247,8 @@ public class MainActivity extends Activity {
                 boolean paused,
                 boolean extensionArmed,
                 boolean gameStarted,
-                boolean matchFinished
+                boolean matchFinished,
+                boolean timerEnabled
         ) {
             this.seconds = Math.max(0, seconds);
             this.total = Math.max(1, total);
@@ -1186,6 +1256,7 @@ public class MainActivity extends Activity {
             this.isExtensionArmed = extensionArmed;
             this.isGameStarted = gameStarted;
             this.isMatchFinished = matchFinished;
+            this.isTimerEnabled = timerEnabled;
             invalidate();
         }
 
@@ -1212,6 +1283,20 @@ public class MainActivity extends Activity {
             paint.setStrokeCap(Paint.Cap.ROUND);
             paint.setColor(Color.rgb(42, 56, 72));
             canvas.drawArc(arc, -90, 360, false, paint);
+
+            if (!isTimerEnabled) {
+                paint.setStyle(Paint.Style.FILL);
+                paint.setTextAlign(Paint.Align.CENTER);
+                paint.setTypeface(Typeface.DEFAULT_BOLD);
+                paint.setTextSize(size * .20f);
+                paint.setColor(Color.WHITE);
+                canvas.drawText("SIN", cx, cy - dp(2), paint);
+
+                paint.setTextSize(size * .115f);
+                paint.setColor(YELLOW);
+                canvas.drawText("RELOJ", cx, cy + size * .23f, paint);
+                return;
+            }
 
             int ringColor;
             if (seconds == 0) {
