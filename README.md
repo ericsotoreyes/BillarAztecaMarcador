@@ -68,3 +68,13 @@ La v8 conserva exactamente el diseño y la lógica de la v7, pero reemplaza el P
 - El botón “INICIAR PARTIDA” se conserva para permitir capturar nombres y configuración antes de comenzar.
 - Durante una partida sin cronómetro el botón central indica “PARTIDA EN CURSO”.
 - Puntos, entradas, promedio, serie mayor, fin de turno, deshacer y fin de partida funcionan normalmente en ambos modos.
+
+
+## v13
+
+- Basada en la v12 estable.
+- En la esquina superior derecha se reemplazó el rótulo “MARCADOR” por un botón rojo con una **X**, inspirado en el control de cierre de una ventana de Windows.
+- Al tocar la X, la app pregunta si se desea cerrar el marcador.
+- Si se confirma, la aplicación se cierra.
+- Si se cancela, la partida continúa sin cambios.
+- No se modificó ninguna otra función del marcador.
