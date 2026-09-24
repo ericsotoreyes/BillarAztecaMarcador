@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - marcothon-v2
+      - marcothon-v3
 
 jobs:
   build:
@@ -32,5 +32,5 @@ jobs:
       - name: Save APK
         uses: actions/upload-artifact@v4
         with:
-          name: ClubBillarMarcothon-Marcador-v2
+          name: ClubBillarMarcothon-Marcador-v3
           path: app/build/outputs/apk/debug/app-debug.apk
