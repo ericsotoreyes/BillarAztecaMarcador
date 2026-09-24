@@ -1,10 +1,10 @@
-name: Build Android APK
+name: Build Club Billar Marcothon APK
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - main
+      - marcothon-v1
 
 jobs:
   build:
@@ -17,9 +17,9 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Verify Billar Azteca logo file
+      - name: Verify Marcothon logo file
         run: |
-          test -s app/src/main/res/drawable/billar_azteca_logo.png
+          test -s app/src/main/res/drawable/marcothon_logo.png
           file app/src/main/res/drawable/billar_azteca_logo.png
 
       - uses: gradle/actions/setup-gradle@v4
@@ -32,5 +32,5 @@ jobs:
       - name: Save APK
         uses: actions/upload-artifact@v4
         with:
-          name: BillarAzteca-Marcador-v12
+          name: ClubBillarMarcothon-Marcador-v1
           path: app/build/outputs/apk/debug/app-debug.apk
