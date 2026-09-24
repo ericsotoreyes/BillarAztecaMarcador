@@ -142,10 +142,10 @@ public class MainActivity extends Activity {
         ));
 
         root.addView(buildHeader(), new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(50)));
 
         root.addView(buildMatchHeader(), new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(40)));
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
 
         LinearLayout gameRow = new LinearLayout(this);
         gameRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -180,7 +180,7 @@ public class MainActivity extends Activity {
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(10), dp(3), dp(10), dp(3));
+        header.setPadding(dp(8), dp(2), dp(10), dp(2));
         header.setBackground(new GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
                 new int[]{YELLOW_SOFT, YELLOW}
@@ -189,18 +189,18 @@ public class MainActivity extends Activity {
         ImageView logo = new ImageView(this);
         logo.setImageResource(R.drawable.billar_azteca_logo);
         logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        header.addView(logo, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        header.addView(logo, new LinearLayout.LayoutParams(dp(46), dp(46)));
 
         TextView title = text("Billar Azteca Club", 23, BRAND_BLUE, true);
         title.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
-        titleParams.setMargins(dp(12), 0, 0, 0);
+        titleParams.setMargins(dp(10), 0, 0, 0);
         header.addView(title, titleParams);
 
         TextView badge = text("MARCADOR", 11, Color.BLACK, true);
         badge.setGravity(Gravity.CENTER);
-        badge.setBackground(roundRect(Color.argb(32, 0, 0, 0), Color.argb(55, 0, 0, 0), 1, 12));
+        badge.setBackground(roundRect(Color.argb(32, 0, 0, 0), Color.argb(55, 0, 0, 0), 1, 14));
         header.addView(badge, new LinearLayout.LayoutParams(dp(82), dp(27)));
 
         return header;
@@ -210,7 +210,7 @@ public class MainActivity extends Activity {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setGravity(Gravity.CENTER);
-        box.setPadding(0, dp(1), 0, 0);
+        box.setPadding(0, dp(2), 0, dp(1));
 
         TextView mesa = text("Mesa 1", 22, Color.WHITE, true);
         mesa.setGravity(Gravity.CENTER);
@@ -444,7 +444,7 @@ public class MainActivity extends Activity {
                 GradientDrawable.Orientation.TL_BR,
                 new int[]{Color.rgb(16, 25, 35), Color.rgb(9, 15, 22)}
         );
-        d.setCornerRadius(dp(15));
+        d.setCornerRadius(dp(16));
         d.setStroke(dp(active ? 4 : 1), active ? YELLOW : BORDER);
         return d;
     }
