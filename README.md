@@ -36,3 +36,14 @@ Versión independiente creada a partir de la plantilla funcional v12 del marcado
 - Version code: 1
 - Version name: 1.0.0
 - Rama: `marcothon-v1`
+
+
+## Marcothon v2
+
+Cambios exclusivamente visuales sobre Marcothon v1:
+
+- Logo del club ligeramente más grande en el encabezado.
+- El borde amarillo del jugador activo se conserva sin cambios.
+- El botón **FIN DE TURNO** ahora tiene fondo amarillo y texto negro.
+- La lógica y todas las funciones permanecen intactas.
+- Aplicación independiente: `com.clubmarcothon.marcador.v2`.
