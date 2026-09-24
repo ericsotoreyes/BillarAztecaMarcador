@@ -314,8 +314,12 @@ public class MainActivity extends Activity {
         panel.addView(statusRow, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(26)));
 
-        TextView score = text("0", 62, Color.WHITE, true);
+        TextView score = text("0", 104, Color.WHITE, true);
         score.setGravity(Gravity.CENTER);
+        score.setSingleLine(true);
+        score.setAutoSizeTextTypeUniformWithConfiguration(
+                64, 112, 1, TypedValue.COMPLEX_UNIT_SP
+        );
         panel.addView(score, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
