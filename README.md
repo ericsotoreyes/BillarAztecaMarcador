@@ -76,3 +76,26 @@ Cambios exclusivamente visuales sobre Marcothon v1:
 - Si había cronómetro activo, siempre se recupera en pausa para evitar descontar tiempo mientras la tablet estuvo apagada.
 - Al terminar una partida normalmente se elimina el respaldo.
 - No requiere internet y no cambia la lógica de juego existente.
+
+
+## Club Billar Marcothon · Pool v1
+
+Primera versión del marcador de pool basada en la última versión estable de Marcothon.
+
+Incluye:
+- Bola 8, Bola 9 y Bola 10.
+- Marcador principal por racks y carrera configurable.
+- Saque alternado o ganador del rack rompe el siguiente.
+- Selección de quién rompe primero.
+- Cronómetro opcional por tiro, con 35 s por defecto.
+- Una extensión de 25 s por jugador y por rack.
+- Reinicio del reloj tras cada tiro.
+- Faltas consecutivas en Bola 9 y Bola 10.
+- Aviso visual y emergente en la segunda falta.
+- Tercera falta consecutiva = pérdida del rack, previa confirmación.
+- Botón contextual «Tiro legal» solo cuando existe una falta acumulada.
+- Push out contextual en Bola 9 y Bola 10.
+- Asignación de lisas/rayadas en Bola 8; sin contador de faltas consecutivas.
+- Deshacer.
+- Guardado y recuperación automática tras apagado/cierre inesperado.
+- Botón rojo X con confirmación para cerrar.
