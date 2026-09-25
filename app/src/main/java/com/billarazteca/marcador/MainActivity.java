@@ -20,22 +20,24 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.Locale;
 
 public class MainActivity extends Activity {
 
     private static final int YELLOW = Color.rgb(255, 214, 0);
-    private static final int YELLOW_SOFT = Color.rgb(255, 227, 64);
     private static final int GREEN = Color.rgb(0, 145, 70);
     private static final int BRAND_RED = Color.rgb(225, 18, 36);
     private static final int BG_TOP = Color.rgb(0, 0, 0);
@@ -46,6 +48,15 @@ public class MainActivity extends Activity {
     private static final int ORANGE = Color.rgb(255, 151, 28);
     private static final int RED = Color.rgb(225, 18, 36);
     private static final int LIGHT = Color.rgb(232, 236, 241);
+
+    private static final int BREAK_ALTERNATE = 0;
+    private static final int BREAK_WINNER = 1;
+
+    private static final int GROUP_OPEN = 0;
+    private static final int GROUP_SOLIDS = 1;
+    private static final int GROUP_STRIPES = 2;
+
+    private static final String RECOVERY_PREFS = "pool_recovery";
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Deque<State> history = new ArrayDeque<>();
@@ -58,20 +69,24 @@ public class MainActivity extends Activity {
     private TextView name2View;
     private TextView active1View;
     private TextView active2View;
+    private TextView meta1View;
+    private TextView meta2View;
     private TextView score1View;
     private TextView score2View;
-    private TextView avg1View;
-    private TextView avg2View;
-    private TextView run1View;
-    private TextView run2View;
-    private TextView inningView;
+    private TextView rackView;
     private TextView activeView;
     private TimerRingView timerView;
-    private Button pauseButton;
-    private Button resetButton;
-    private Button undoButton;
+
     private Button extension1Button;
     private Button extension2Button;
+    private Button winRack1Button;
+    private Button winRack2Button;
+    private Button undoButton;
+    private Button foulButton;
+    private Button endTurnButton;
+    private Button pauseButton;
+    private Button resetButton;
+    private Button contextButton;
 
     private ToneGenerator toneGenerator;
 
@@ -79,29 +94,42 @@ public class MainActivity extends Activity {
     private String player1 = "Jugador 1";
     private String player2 = "Jugador 2";
 
+    private int gameType = 9;
+    private int raceTo = 7;
     private int score1 = 0;
     private int score2 = 0;
-    private int innings1 = 1;
-    private int innings2 = 0;
-    private int maxRun1 = 0;
-    private int maxRun2 = 0;
-    private int currentRun = 0;
-    private int currentPlayer = 1;
-    private int target = 30;
-    private int shotSeconds = 40;
-    private int secondsLeft = 40;
+    private int rackNumber = 1;
 
-    private int extensions1 = 2;
-    private int extensions2 = 2;
-    private boolean extensionArmed = false;
+    private int currentPlayer = 1;
+    private int breaker = 1;
+    private int firstBreaker = 1;
+    private int breakMode = BREAK_ALTERNATE;
+
+    private boolean breakShotPending = true;
+    private boolean pushOutAvailable = false;
+    private boolean pushOutInProgress = false;
+
+    private int fouls1 = 0;
+    private int fouls2 = 0;
+
+    private int group1 = GROUP_OPEN;
+    private int group2 = GROUP_OPEN;
+
+    private boolean useTimer = true;
+    private int shotSeconds = 35;
+    private int secondsLeft = 35;
+    private int extensions1 = 1;
+    private int extensions2 = 1;
 
     private boolean paused = false;
     private boolean gameStarted = false;
     private boolean matchFinished = false;
-    private boolean useTimer = true;
-    private long lastTick = 0L;
+    private boolean rackWaitingStart = false;
 
-    private static final String RECOVERY_PREFS = "billiards_recovery";
+    private long lastTick = 0L;
+    private boolean tenSecondWarningPlayed = false;
+    private boolean timeExpiredDialogShown = false;
+
     private boolean recoveryActive = false;
     private boolean persistenceReady = false;
     private String lastPersistentCore = "";
@@ -159,6 +187,7 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         savePersistentState(true);
         handler.removeCallbacks(timerRunnable);
+
         if (toneGenerator != null) {
             try {
                 toneGenerator.release();
@@ -166,6 +195,7 @@ public class MainActivity extends Activity {
             }
             toneGenerator = null;
         }
+
         super.onDestroy();
     }
 
@@ -175,6 +205,7 @@ public class MainActivity extends Activity {
                     WindowManager.LayoutParams.FLAG_FULLSCREEN,
                     WindowManager.LayoutParams.FLAG_FULLSCREEN
             );
+
             getWindow().getDecorView().setSystemUiVisibility(
                     View.SYSTEM_UI_FLAG_FULLSCREEN |
                     View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
@@ -200,7 +231,7 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(54)));
 
         root.addView(buildMatchHeader(), new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(42)));
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(46)));
 
         LinearLayout gameRow = new LinearLayout(this);
         gameRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -215,7 +246,7 @@ public class MainActivity extends Activity {
         playerParams.setMargins(dp(3), 0, dp(3), 0);
 
         LinearLayout.LayoutParams centerParams = new LinearLayout.LayoutParams(
-                dp(178), LinearLayout.LayoutParams.MATCH_PARENT);
+                dp(190), LinearLayout.LayoutParams.MATCH_PARENT);
         centerParams.setMargins(dp(4), 0, dp(4), 0);
 
         gameRow.addView(panel1, playerParams);
@@ -226,7 +257,7 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
         root.addView(buildActions(), new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(54)));
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(56)));
 
         return root;
     }
@@ -238,7 +269,7 @@ public class MainActivity extends Activity {
         header.setPadding(dp(8), dp(2), dp(10), dp(2));
         header.setBackground(new GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{Color.rgb(0, 0, 0), Color.rgb(18, 18, 18)}
+                new int[]{Color.BLACK, Color.rgb(18, 18, 18)}
         ));
 
         ImageView logo = new ImageView(this);
@@ -246,8 +277,9 @@ public class MainActivity extends Activity {
         logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
         header.addView(logo, new LinearLayout.LayoutParams(dp(50), dp(50)));
 
-        TextView title = text("Club Billar Marcothon", 23, Color.WHITE, true);
+        TextView title = text("Club Billar Marcothon · Pool", 22, Color.WHITE, true);
         title.setGravity(Gravity.CENTER_VERTICAL);
+
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
         titleParams.setMargins(dp(10), 0, 0, 0);
@@ -274,6 +306,7 @@ public class MainActivity extends Activity {
             closeButton.setStateListAnimator(null);
         } catch (Throwable ignored) {
         }
+
         closeButton.setOnClickListener(v -> confirmExitApp());
         header.addView(closeButton, new LinearLayout.LayoutParams(dp(52), dp(30)));
 
@@ -284,20 +317,19 @@ public class MainActivity extends Activity {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setGravity(Gravity.CENTER);
-        box.setPadding(0, dp(2), 0, dp(1));
+        box.setPadding(0, dp(1), 0, dp(1));
 
-        tableView = text(tableName, 22, Color.WHITE, true);
+        tableView = text(tableName, 19, Color.WHITE, true);
         tableView.setGravity(Gravity.CENTER);
         tableView.setOnClickListener(v -> editTableName());
 
-        matchView = text("Partido a " + target, 13, MUTED, false);
+        matchView = text("", 12, MUTED, false);
         matchView.setGravity(Gravity.CENTER);
-        matchView.setOnClickListener(v -> editTarget());
 
         box.addView(tableView, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.25f));
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.05f));
         box.addView(matchView, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, .75f));
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, .95f));
 
         return box;
     }
@@ -326,114 +358,65 @@ public class MainActivity extends Activity {
         TextView active = text("● EN TURNO", 10, YELLOW, true);
         active.setGravity(Gravity.CENTER);
 
-        Button extension = styledButton("Extensión · 2", LIGHT, Color.rgb(14, 21, 29), 10);
+        TextView meta = text("Faltas: 0", 10, MUTED, true);
+        meta.setGravity(Gravity.CENTER);
+        meta.setPadding(dp(3), 0, dp(3), 0);
+        meta.setBackground(roundRect(PANEL_DARK, BORDER, 1, 8));
+        meta.setOnClickListener(v -> {
+            if (gameType == 8) showGroupDialog();
+        });
+
+        Button extension = styledButton("Ext. · 1", LIGHT, Color.rgb(14, 21, 29), 9);
         extension.setOnClickListener(v -> requestExtension(first ? 1 : 2));
 
         LinearLayout.LayoutParams activeParams = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
+                0, LinearLayout.LayoutParams.MATCH_PARENT, .95f);
+        LinearLayout.LayoutParams metaParams = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.MATCH_PARENT, .95f);
+        metaParams.setMargins(dp(3), 0, dp(3), 0);
         LinearLayout.LayoutParams extParams = new LinearLayout.LayoutParams(
-                dp(96), LinearLayout.LayoutParams.MATCH_PARENT);
-        extParams.setMargins(dp(4), 0, 0, 0);
+                dp(72), LinearLayout.LayoutParams.MATCH_PARENT);
 
         statusRow.addView(active, activeParams);
+        statusRow.addView(meta, metaParams);
         statusRow.addView(extension, extParams);
 
         panel.addView(statusRow, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(26)));
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(28)));
 
         TextView score = text("0", 104, Color.WHITE, true);
         score.setGravity(Gravity.CENTER);
         score.setSingleLine(true);
         score.setAutoSizeTextTypeUniformWithConfiguration(
-                64, 112, 1, TypedValue.COMPLEX_UNIT_SP
+                64, 118, 1, TypedValue.COMPLEX_UNIT_SP
         );
+
         panel.addView(score, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        LinearLayout stats = new LinearLayout(this);
-        stats.setOrientation(LinearLayout.HORIZONTAL);
-
-        LinearLayout avgBox = statBox("Promedio");
-        LinearLayout runBox = statBox("Serie mayor");
-        TextView avg = (TextView) avgBox.getChildAt(1);
-        TextView run = (TextView) runBox.getChildAt(1);
-
-        LinearLayout.LayoutParams statParams1 = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
-        statParams1.setMargins(0, 0, dp(3), 0);
-
-        LinearLayout.LayoutParams statParams2 = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
-        statParams2.setMargins(dp(3), 0, 0, 0);
-
-        stats.addView(avgBox, statParams1);
-        stats.addView(runBox, statParams2);
-
-        panel.addView(stats, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(54)));
-
-        LinearLayout buttons = new LinearLayout(this);
-        buttons.setOrientation(LinearLayout.HORIZONTAL);
-
-        Button minus = styledButton("−1", RED, Color.WHITE, 24);
-        Button plus = styledButton("+1", YELLOW, Color.BLACK, 24);
-
-        LinearLayout.LayoutParams leftButton = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
-        leftButton.setMargins(0, dp(4), dp(3), 0);
-
-        LinearLayout.LayoutParams rightButton = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
-        rightButton.setMargins(dp(3), dp(4), 0, 0);
-
-        buttons.addView(minus, leftButton);
-        buttons.addView(plus, rightButton);
-
-        panel.addView(buttons, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
+        Button winRack = styledButton("GANÓ RACK", YELLOW, Color.BLACK, 20);
+        panel.addView(winRack, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(50)));
 
         if (first) {
             name1View = name;
             active1View = active;
-            extension1Button = extension;
+            meta1View = meta;
             score1View = score;
-            avg1View = avg;
-            run1View = run;
-            minus.setOnClickListener(v -> subtractPoint(1));
-            plus.setOnClickListener(v -> addPoint(1));
+            extension1Button = extension;
+            winRack1Button = winRack;
+            winRack.setOnClickListener(v -> awardRack(1));
         } else {
             name2View = name;
             active2View = active;
-            extension2Button = extension;
+            meta2View = meta;
             score2View = score;
-            avg2View = avg;
-            run2View = run;
-            minus.setOnClickListener(v -> subtractPoint(2));
-            plus.setOnClickListener(v -> addPoint(2));
+            extension2Button = extension;
+            winRack2Button = winRack;
+            winRack.setOnClickListener(v -> awardRack(2));
         }
 
         return panel;
-    }
-
-    private LinearLayout statBox(String labelText) {
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setGravity(Gravity.CENTER);
-        box.setPadding(dp(4), dp(3), dp(4), dp(3));
-        box.setBackground(roundRect(PANEL_DARK, BORDER, 1, 12));
-
-        TextView label = text(labelText, 12, MUTED, false);
-        label.setGravity(Gravity.CENTER);
-
-        TextView value = text("0", 25, YELLOW, true);
-        value.setGravity(Gravity.CENTER);
-
-        box.addView(label, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, .8f));
-        box.addView(value, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.2f));
-
-        return box;
     }
 
     private LinearLayout centerPanel() {
@@ -443,43 +426,57 @@ public class MainActivity extends Activity {
         center.setPadding(dp(7), dp(6), dp(7), dp(6));
         center.setBackground(roundRect(Color.rgb(12, 20, 29), BORDER, 1, 15));
 
-        LinearLayout entry = new LinearLayout(this);
-        entry.setOrientation(LinearLayout.VERTICAL);
-        entry.setGravity(Gravity.CENTER);
-        entry.setBackground(roundRect(PANEL_DARK, BORDER, 1, 11));
+        LinearLayout rackBox = new LinearLayout(this);
+        rackBox.setOrientation(LinearLayout.VERTICAL);
+        rackBox.setGravity(Gravity.CENTER);
+        rackBox.setBackground(roundRect(PANEL_DARK, BORDER, 1, 11));
 
-        TextView entryLabel = text("Entrada", 12, MUTED, false);
-        entryLabel.setGravity(Gravity.CENTER);
+        TextView rackLabel = text("Rack", 12, MUTED, false);
+        rackLabel.setGravity(Gravity.CENTER);
 
-        inningView = text("1", 27, Color.WHITE, true);
-        inningView.setGravity(Gravity.CENTER);
+        rackView = text("1", 27, Color.WHITE, true);
+        rackView.setGravity(Gravity.CENTER);
 
-        entry.addView(entryLabel, new LinearLayout.LayoutParams(
+        rackBox.addView(rackLabel, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, .7f));
-        entry.addView(inningView, new LinearLayout.LayoutParams(
+        rackBox.addView(rackView, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.3f));
 
-        center.addView(entry, new LinearLayout.LayoutParams(
+        center.addView(rackBox, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(53)));
 
         timerView = new TimerRingView();
+
         LinearLayout.LayoutParams timerParams = new LinearLayout.LayoutParams(dp(121), dp(121));
         timerParams.gravity = Gravity.CENTER_HORIZONTAL;
-        timerParams.setMargins(0, dp(5), 0, 0);
+        timerParams.setMargins(0, dp(5), 0, dp(4));
         center.addView(timerView, timerParams);
 
         timerView.setOnClickListener(v -> {
-            if (useTimer) resetTimerManual();
-        });
-        timerView.setOnLongClickListener(v -> {
-            if (useTimer) {
-                editShotSeconds();
+            if (!useTimer || !gameStarted || matchFinished || rackWaitingStart) return;
+
+            if (pushOutInProgress) {
+                finishPushOutDialog();
+            } else {
+                recordLegalShotSamePlayer();
             }
+        });
+
+        timerView.setOnLongClickListener(v -> {
+            if (useTimer) editShotSeconds();
             return true;
         });
 
-        activeView = text("En turno: Jugador 1", 11, YELLOW, true);
+        contextButton = styledButton("", LIGHT, Color.rgb(14, 21, 29), 10);
+        contextButton.setVisibility(View.GONE);
+        contextButton.setOnClickListener(v -> handleContextAction());
+
+        center.addView(contextButton, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(36)));
+
+        activeView = text("", 11, YELLOW, true);
         activeView.setGravity(Gravity.CENTER);
+
         center.addView(activeView, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
@@ -491,27 +488,26 @@ public class MainActivity extends Activity {
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setPadding(0, dp(4), 0, 0);
 
-        undoButton = styledButton("↶  Deshacer", Color.rgb(150, 156, 164), Color.rgb(14, 21, 29), 14);
-        Button endTurn = styledButton("FIN DE TURNO", YELLOW, Color.BLACK, 19);
-        pauseButton = styledButton("INICIAR PARTIDA", YELLOW, Color.BLACK, 14);
-        resetButton = styledButton("Reiniciar reloj", LIGHT, Color.rgb(14, 21, 29), 13);
-        Button newGame = styledButton("Nuevo partido", LIGHT, Color.rgb(14, 21, 29), 13);
+        undoButton = styledButton("↶ Deshacer", Color.rgb(150, 156, 164), Color.rgb(14, 21, 29), 13);
+        foulButton = styledButton("FALTA", BRAND_RED, Color.WHITE, 15);
+        endTurnButton = styledButton("FIN DE TURNO", YELLOW, Color.BLACK, 17);
+        pauseButton = styledButton("INICIAR PARTIDA", LIGHT, Color.BLACK, 13);
+        resetButton = styledButton("Reiniciar reloj", LIGHT, Color.rgb(14, 21, 29), 12);
+        Button newGame = styledButton("Nuevo partido", LIGHT, Color.rgb(14, 21, 29), 12);
 
         undoButton.setOnClickListener(v -> undo());
-        endTurn.setOnClickListener(v -> finishTurn());
+        foulButton.setOnClickListener(v -> registerFoul());
+        endTurnButton.setOnClickListener(v -> finishTurnLegal());
         pauseButton.setOnClickListener(v -> handleStartPause());
-        resetButton.setOnClickListener(v -> {
-            if (useTimer) {
-                resetTimerManual();
-            }
-        });
+        resetButton.setOnClickListener(v -> resetTimerManual());
         newGame.setOnClickListener(v -> requestNewGame());
 
-        actions.addView(undoButton, actionParams(1.0f));
-        actions.addView(endTurn, actionParams(2.15f));
-        actions.addView(pauseButton, actionParams(.85f));
-        actions.addView(resetButton, actionParams(1.12f));
-        actions.addView(newGame, actionParams(1.05f));
+        actions.addView(undoButton, actionParams(.88f));
+        actions.addView(foulButton, actionParams(.78f));
+        actions.addView(endTurnButton, actionParams(1.42f));
+        actions.addView(pauseButton, actionParams(1.12f));
+        actions.addView(resetButton, actionParams(1.02f));
+        actions.addView(newGame, actionParams(1.02f));
 
         return actions;
     }
@@ -536,10 +532,12 @@ public class MainActivity extends Activity {
         b.setMinHeight(0);
         b.setMinimumHeight(0);
         b.setBackground(roundRect(fill, Color.argb(50, 255, 255, 255), 1, 12));
+
         try {
             b.setStateListAnimator(null);
         } catch (Throwable ignored) {
         }
+
         return b;
     }
 
@@ -557,25 +555,29 @@ public class MainActivity extends Activity {
         GradientDrawable d = new GradientDrawable();
         d.setColor(fill);
         d.setCornerRadius(dp(radiusDp));
-        if (strokeDp > 0) d.setStroke(dp(strokeDp), stroke);
+        d.setStroke(dp(strokeDp), stroke);
         return d;
     }
 
     private GradientDrawable playerBackground(boolean active) {
-        GradientDrawable d = new GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                new int[]{Color.rgb(16, 25, 35), Color.rgb(9, 15, 22)}
+        return roundRect(
+                PANEL_DARK,
+                active ? YELLOW : BORDER,
+                active ? 3 : 1,
+                15
         );
-        d.setCornerRadius(dp(16));
-        d.setStroke(dp(active ? 4 : 1), active ? YELLOW : BORDER);
-        return d;
     }
 
     private void refresh() {
         if (score1View == null) return;
 
         tableView.setText(tableName);
-        matchView.setText("Partido a " + target);
+        matchView.setText(
+                gameName() +
+                " · Carrera a " + raceTo +
+                " · Rack " + rackNumber +
+                " · Rompe: " + playerName(breaker)
+        );
 
         name1View.setText(player1);
         name2View.setText(player2);
@@ -583,19 +585,7 @@ public class MainActivity extends Activity {
         score1View.setText(String.valueOf(score1));
         score2View.setText(String.valueOf(score2));
 
-        avg1View.setText(String.format(
-                Locale.US, "%.3f",
-                innings1 > 0 ? score1 / (double) innings1 : 0.0
-        ));
-        avg2View.setText(String.format(
-                Locale.US, "%.3f",
-                innings2 > 0 ? score2 / (double) innings2 : 0.0
-        ));
-
-        run1View.setText(String.valueOf(maxRun1));
-        run2View.setText(String.valueOf(maxRun2));
-
-        inningView.setText(String.valueOf(Math.max(innings1, innings2)));
+        rackView.setText(String.valueOf(rackNumber));
 
         panel1.setBackground(playerBackground(currentPlayer == 1));
         panel2.setBackground(playerBackground(currentPlayer == 2));
@@ -603,25 +593,42 @@ public class MainActivity extends Activity {
         active1View.setVisibility(currentPlayer == 1 ? View.VISIBLE : View.INVISIBLE);
         active2View.setVisibility(currentPlayer == 2 ? View.VISIBLE : View.INVISIBLE);
 
-        String currentName = currentPlayer == 1 ? player1 : player2;
+        updateMeta(meta1View, 1);
+        updateMeta(meta2View, 2);
+        updateExtensionButton(extension1Button, 1, extensions1);
+        updateExtensionButton(extension2Button, 2, extensions2);
+
+        String currentName = playerName(currentPlayer);
+
         if (matchFinished) {
             activeView.setText("Partida terminada");
         } else if (!gameStarted) {
-            activeView.setText("Primer turno: " + currentName);
+            activeView.setText("Rompe primero: " + playerName(breaker));
+        } else if (rackWaitingStart) {
+            activeView.setText("Rack " + rackNumber + " listo · rompe " + playerName(breaker));
+        } else if (pushOutInProgress) {
+            activeView.setText("Push out · " + currentName);
         } else {
             activeView.setText("En turno: " + currentName);
         }
-
-        updateExtensionButton(extension1Button, 1, extensions1);
-        updateExtensionButton(extension2Button, 2, extensions2);
 
         if (matchFinished) {
             pauseButton.setText("PARTIDA TERMINADA");
             pauseButton.setEnabled(false);
             pauseButton.setTextColor(Color.rgb(90, 95, 102));
-            pauseButton.setBackground(roundRect(Color.rgb(190, 194, 200), Color.argb(35, 0, 0, 0), 1, 12));
+            pauseButton.setBackground(roundRect(
+                    Color.rgb(190, 194, 200),
+                    Color.argb(35, 0, 0, 0),
+                    1,
+                    12
+            ));
         } else if (!gameStarted) {
             pauseButton.setText("INICIAR PARTIDA");
+            pauseButton.setEnabled(true);
+            pauseButton.setTextColor(Color.BLACK);
+            pauseButton.setBackground(roundRect(LIGHT, Color.argb(50, 255, 255, 255), 1, 12));
+        } else if (rackWaitingStart) {
+            pauseButton.setText("INICIAR RACK");
             pauseButton.setEnabled(true);
             pauseButton.setTextColor(Color.BLACK);
             pauseButton.setBackground(roundRect(YELLOW, Color.argb(65, 0, 0, 0), 1, 12));
@@ -629,10 +636,16 @@ public class MainActivity extends Activity {
             pauseButton.setText("PARTIDA EN CURSO");
             pauseButton.setEnabled(false);
             pauseButton.setTextColor(Color.rgb(70, 76, 84));
-            pauseButton.setBackground(roundRect(Color.rgb(205, 209, 214), Color.argb(30, 0, 0, 0), 1, 12));
+            pauseButton.setBackground(roundRect(
+                    Color.rgb(205, 209, 214),
+                    Color.argb(30, 0, 0, 0),
+                    1,
+                    12
+            ));
         } else {
             pauseButton.setEnabled(true);
             pauseButton.setText(paused ? "Reanudar" : "Pausa");
+
             if (paused) {
                 pauseButton.setTextColor(Color.BLACK);
                 pauseButton.setBackground(roundRect(YELLOW, Color.argb(65, 0, 0, 0), 1, 12));
@@ -642,318 +655,516 @@ public class MainActivity extends Activity {
             }
         }
 
-        resetButton.setEnabled(useTimer && gameStarted && !matchFinished);
-        resetButton.setAlpha(useTimer ? 1f : .55f);
+        boolean playControls = gameStarted && !matchFinished && !rackWaitingStart;
+        foulButton.setEnabled(playControls);
+        foulButton.setAlpha(playControls ? 1f : .5f);
+
+        endTurnButton.setEnabled(playControls && !pushOutInProgress);
+        endTurnButton.setAlpha((playControls && !pushOutInProgress) ? 1f : .5f);
+
+        winRack1Button.setEnabled(playControls);
+        winRack2Button.setEnabled(playControls);
+        winRack1Button.setAlpha(playControls ? 1f : .55f);
+        winRack2Button.setAlpha(playControls ? 1f : .55f);
+
+        resetButton.setEnabled(useTimer && playControls);
+        resetButton.setAlpha((useTimer && playControls) ? 1f : .55f);
 
         undoButton.setEnabled(!history.isEmpty());
         undoButton.setAlpha(history.isEmpty() ? .55f : 1f);
+
+        updateContextButton();
 
         timerView.setTimer(
                 secondsLeft,
                 shotSeconds,
                 paused,
-                extensionArmed,
                 gameStarted,
                 matchFinished,
-                useTimer
+                useTimer,
+                rackWaitingStart
         );
 
         savePersistentState(false);
     }
 
-    private void updateExtensionButton(Button button, int player, int remaining) {
-        if (button == null) return;
+    private void updateMeta(TextView view, int player) {
+        if (gameType == 8) {
+            int group = player == 1 ? group1 : group2;
 
-        boolean isCurrent = player == currentPlayer;
-
-        if (!useTimer || !gameStarted || matchFinished) {
-            button.setText(useTimer ? "Extensión · " + remaining : "Sin reloj");
-            button.setEnabled(false);
-            button.setTextColor(Color.rgb(45, 50, 58));
-            button.setBackground(roundRect(Color.rgb(205, 209, 214), Color.argb(30, 0, 0, 0), 1, 10));
-            button.setAlpha(.65f);
-            return;
-        }
-
-        boolean armedHere = isCurrent && extensionArmed;
-
-        if (armedHere) {
-            button.setText("EXT. ACTIVA");
-            button.setEnabled(false);
-            button.setTextColor(Color.BLACK);
-            button.setBackground(roundRect(ORANGE, Color.argb(70, 0, 0, 0), 1, 10));
-            button.setAlpha(1f);
-            return;
-        }
-
-        if (remaining <= 0) {
-            button.setText("Sin ext.");
-            button.setEnabled(false);
-            button.setTextColor(Color.rgb(80, 85, 92));
-            button.setBackground(roundRect(Color.rgb(185, 189, 194), Color.argb(30, 0, 0, 0), 1, 10));
-            button.setAlpha(.75f);
-            return;
-        }
-
-        button.setText("Extensión · " + remaining);
-        button.setEnabled(isCurrent);
-
-        if (isCurrent) {
-            button.setTextColor(Color.BLACK);
-            button.setBackground(roundRect(YELLOW, Color.argb(70, 0, 0, 0), 1, 10));
-            button.setAlpha(1f);
+            if (group == GROUP_SOLIDS) {
+                view.setText("LISAS");
+                view.setTextColor(Color.WHITE);
+            } else if (group == GROUP_STRIPES) {
+                view.setText("RAYADAS");
+                view.setTextColor(Color.WHITE);
+            } else {
+                view.setText("MESA ABIERTA");
+                view.setTextColor(MUTED);
+            }
         } else {
-            button.setTextColor(Color.rgb(45, 50, 58));
-            button.setBackground(roundRect(Color.rgb(205, 209, 214), Color.argb(30, 0, 0, 0), 1, 10));
-            button.setAlpha(.65f);
+            int fouls = player == 1 ? fouls1 : fouls2;
+
+            if (fouls >= 2) {
+                view.setText("⚠ 2 FALTAS");
+                view.setTextColor(ORANGE);
+            } else {
+                view.setText("Faltas: " + fouls);
+                view.setTextColor(fouls > 0 ? YELLOW : MUTED);
+            }
         }
     }
 
-    private void addPoint(int player) {
-        if (!gameStarted || matchFinished) {
-            Toast.makeText(this, "Primero inicia la partida", Toast.LENGTH_SHORT).show();
+    private void updateExtensionButton(Button button, int player, int remaining) {
+        if (!useTimer) {
+            button.setVisibility(View.GONE);
             return;
         }
-        if (player != currentPlayer) return;
-        pushState();
 
-        if (player == 1) {
+        button.setVisibility(View.VISIBLE);
+        button.setText("Ext. · " + remaining);
+
+        boolean enabled =
+                gameStarted &&
+                !matchFinished &&
+                !rackWaitingStart &&
+                !paused &&
+                currentPlayer == player &&
+                remaining > 0;
+
+        button.setEnabled(enabled);
+        button.setAlpha(enabled ? 1f : .55f);
+    }
+
+    private void updateContextButton() {
+        if (contextButton == null) return;
+
+        if (!gameStarted || matchFinished || rackWaitingStart) {
+            contextButton.setVisibility(View.GONE);
+            return;
+        }
+
+        if (pushOutInProgress) {
+            contextButton.setVisibility(View.VISIBLE);
+            contextButton.setText("FINALIZAR PUSH OUT");
+            contextButton.setTextColor(Color.WHITE);
+            contextButton.setBackground(roundRect(GREEN, Color.argb(45, 255, 255, 255), 1, 10));
+            return;
+        }
+
+        if (pushOutAvailable && isNineTen()) {
+            contextButton.setVisibility(View.VISIBLE);
+            contextButton.setText("PUSH OUT");
+            contextButton.setTextColor(Color.BLACK);
+            contextButton.setBackground(roundRect(LIGHT, Color.argb(45, 255, 255, 255), 1, 10));
+            return;
+        }
+
+        if (gameType == 8 && group1 == GROUP_OPEN) {
+            contextButton.setVisibility(View.VISIBLE);
+            contextButton.setText("ASIGNAR GRUPOS");
+            contextButton.setTextColor(Color.BLACK);
+            contextButton.setBackground(roundRect(LIGHT, Color.argb(45, 255, 255, 255), 1, 10));
+            return;
+        }
+
+        if (isNineTen() && currentFouls() > 0) {
+            contextButton.setVisibility(View.VISIBLE);
+            contextButton.setText("✓ TIRO LEGAL");
+            contextButton.setTextColor(Color.BLACK);
+            contextButton.setBackground(roundRect(YELLOW, Color.argb(65, 0, 0, 0), 1, 10));
+            return;
+        }
+
+        contextButton.setVisibility(View.GONE);
+    }
+
+    private void handleContextAction() {
+        if (pushOutInProgress) {
+            finishPushOutDialog();
+        } else if (pushOutAvailable && isNineTen()) {
+            startPushOut();
+        } else if (gameType == 8 && group1 == GROUP_OPEN) {
+            showGroupDialog();
+        } else if (isNineTen() && currentFouls() > 0) {
+            recordLegalShotSamePlayer();
+        }
+    }
+
+    private void awardRack(int player) {
+        if (!gameStarted || matchFinished || rackWaitingStart) return;
+
+        pushState();
+        completeRack(player, "Rack para " + playerName(player));
+    }
+
+    private void completeRack(int winner, String reason) {
+        if (winner == 1) {
             score1++;
-            currentRun++;
-            maxRun1 = Math.max(maxRun1, currentRun);
         } else {
             score2++;
-            currentRun++;
-            maxRun2 = Math.max(maxRun2, currentRun);
         }
 
-        extensionArmed = false;
-
-        if ((player == 1 ? score1 : score2) >= target) {
-            paused = true;
-            gameStarted = false;
+        if ((winner == 1 ? score1 : score2) >= raceTo) {
             matchFinished = true;
-            lastTick = System.currentTimeMillis();
+            paused = true;
+            rackWaitingStart = false;
+            pushOutAvailable = false;
+            pushOutInProgress = false;
+            secondsLeft = 0;
+            clearSavedMatch();
             refresh();
-            showWinner(player);
+            showWinner(winner, reason);
             return;
         }
 
-        resetTimerInternal();
-    }
+        rackNumber++;
 
-    private void subtractPoint(int player) {
-        if (!gameStarted || matchFinished) {
-            Toast.makeText(this, "Primero inicia la partida", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        if (player == 1 && score1 <= 0) return;
-        if (player == 2 && score2 <= 0) return;
+        fouls1 = 0;
+        fouls2 = 0;
+        group1 = GROUP_OPEN;
+        group2 = GROUP_OPEN;
 
-        pushState();
+        extensions1 = 1;
+        extensions2 = 1;
 
-        if (player == 1) {
-            score1--;
-            if (currentPlayer == 1 && currentRun > 0) currentRun--;
+        if (breakMode == BREAK_ALTERNATE) {
+            breaker = otherPlayer(breaker);
         } else {
-            score2--;
-            if (currentPlayer == 2 && currentRun > 0) currentRun--;
+            breaker = winner;
+        }
+
+        currentPlayer = breaker;
+        breakShotPending = true;
+        pushOutAvailable = false;
+        pushOutInProgress = false;
+
+        secondsLeft = shotSeconds;
+        tenSecondWarningPlayed = false;
+        timeExpiredDialogShown = false;
+        lastTick = System.currentTimeMillis();
+
+        if (useTimer) {
+            paused = true;
+            rackWaitingStart = true;
+        } else {
+            paused = false;
+            rackWaitingStart = false;
         }
 
         refresh();
+        Toast.makeText(this, reason, Toast.LENGTH_SHORT).show();
     }
 
-    private void finishTurn() {
-        if (!gameStarted || matchFinished) {
-            Toast.makeText(this, "Primero inicia la partida", Toast.LENGTH_SHORT).show();
-            return;
-        }
+    private void finishTurnLegal() {
+        if (!gameStarted || matchFinished || rackWaitingStart || pushOutInProgress) return;
+
         pushState();
 
-        currentRun = 0;
-        extensionArmed = false;
-
-        if (currentPlayer == 1) {
-            currentPlayer = 2;
-            innings2++;
-        } else {
-            currentPlayer = 1;
-            innings1++;
+        if (isNineTen()) {
+            setFouls(currentPlayer, 0);
         }
 
+        processCompletedLegalShot();
+        currentPlayer = otherPlayer(currentPlayer);
+
         resetTimerInternal();
+        refresh();
+    }
+
+    private void recordLegalShotSamePlayer() {
+        if (!gameStarted || matchFinished || rackWaitingStart) return;
+
+        if (pushOutInProgress) {
+            finishPushOutDialog();
+            return;
+        }
+
+        pushState();
+
+        if (isNineTen()) {
+            setFouls(currentPlayer, 0);
+        }
+
+        processCompletedLegalShot();
+        resetTimerInternal();
+        refresh();
+    }
+
+    private void processCompletedLegalShot() {
+        if (breakShotPending) {
+            breakShotPending = false;
+            pushOutAvailable = isNineTen();
+        } else if (pushOutAvailable) {
+            pushOutAvailable = false;
+        }
+    }
+
+    private void registerFoul() {
+        if (!gameStarted || matchFinished || rackWaitingStart) return;
+
+        pushState();
+
+        if (breakShotPending) {
+            breakShotPending = false;
+            pushOutAvailable = false;
+        } else if (pushOutAvailable) {
+            pushOutAvailable = false;
+        }
+
+        pushOutInProgress = false;
+
+        int offender = currentPlayer;
+        int incoming = otherPlayer(offender);
+
+        if (isNineTen()) {
+            int updated = playerFouls(offender) + 1;
+            setFouls(offender, updated);
+
+            if (updated >= 3) {
+                paused = true;
+                refresh();
+                showThirdFoulDialog(offender);
+                return;
+            }
+        }
+
+        currentPlayer = incoming;
+        resetTimerInternal();
+        refresh();
+
+        Toast.makeText(
+                this,
+                "Falta de " + playerName(offender) + " · bola en mano para " + playerName(incoming),
+                Toast.LENGTH_SHORT
+        ).show();
+
+        if (isNineTen() && playerFouls(offender) == 2) {
+            showSecondFoulWarning(offender);
+        }
+    }
+
+    private void showSecondFoulWarning(int player) {
+        new AlertDialog.Builder(this)
+                .setTitle("⚠ Segunda falta consecutiva")
+                .setMessage(
+                        playerName(player) +
+                        " tiene 2 faltas consecutivas. Debe ser advertido antes de su siguiente tiro."
+                )
+                .setPositiveButton("Entendido", null)
+                .show();
+    }
+
+    private void showThirdFoulDialog(int offender) {
+        int winner = otherPlayer(offender);
+
+        new AlertDialog.Builder(this)
+                .setTitle("3.ª falta consecutiva")
+                .setMessage(
+                        playerName(offender) +
+                        " llegó a tres faltas consecutivas y pierde el rack."
+                )
+                .setCancelable(false)
+                .setNegativeButton("Corregir", (dialog, which) -> undo())
+                .setPositiveButton("Confirmar pérdida", (dialog, which) -> {
+                    paused = false;
+                    completeRack(winner, "Rack por 3 faltas consecutivas");
+                })
+                .show();
+    }
+
+    private void startPushOut() {
+        if (!pushOutAvailable || !isNineTen() || matchFinished) return;
+
+        pushState();
+        pushOutAvailable = false;
+        pushOutInProgress = true;
+        resetTimerInternal();
+        refresh();
+
+        Toast.makeText(
+                this,
+                "Push out declarado. Al terminar, indica quién realizará el siguiente tiro.",
+                Toast.LENGTH_LONG
+        ).show();
+    }
+
+    private void finishPushOutDialog() {
+        if (!pushOutInProgress) return;
+
+        final int shooter = currentPlayer;
+        final int opponent = otherPlayer(shooter);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Fin del push out")
+                .setMessage("El rival decide quién realizará el siguiente tiro.")
+                .setNegativeButton(
+                        playerName(shooter) + " tira",
+                        (dialog, which) -> finishPushOutChoice(shooter)
+                )
+                .setPositiveButton(
+                        playerName(opponent) + " tira",
+                        (dialog, which) -> finishPushOutChoice(opponent)
+                )
+                .show();
+    }
+
+    private void finishPushOutChoice(int nextPlayer) {
+        pushState();
+        currentPlayer = nextPlayer;
+        pushOutInProgress = false;
+        resetTimerInternal();
+        refresh();
+    }
+
+    private void showGroupDialog() {
+        if (gameType != 8) return;
+
+        String[] options = new String[]{
+                player1 + " = LISAS · " + player2 + " = RAYADAS",
+                player1 + " = RAYADAS · " + player2 + " = LISAS",
+                "Mesa abierta"
+        };
+
+        new AlertDialog.Builder(this)
+                .setTitle("Grupos de Bola 8")
+                .setItems(options, (dialog, which) -> {
+                    pushState();
+
+                    if (which == 0) {
+                        group1 = GROUP_SOLIDS;
+                        group2 = GROUP_STRIPES;
+                    } else if (which == 1) {
+                        group1 = GROUP_STRIPES;
+                        group2 = GROUP_SOLIDS;
+                    } else {
+                        group1 = GROUP_OPEN;
+                        group2 = GROUP_OPEN;
+                    }
+
+                    refresh();
+                })
+                .show();
     }
 
     private void requestExtension(int player) {
-        if (!useTimer) {
-            Toast.makeText(this, "Esta partida no usa cronómetro", Toast.LENGTH_SHORT).show();
+        if (!useTimer ||
+                !gameStarted ||
+                matchFinished ||
+                rackWaitingStart ||
+                paused ||
+                currentPlayer != player) {
             return;
         }
-        if (!gameStarted || matchFinished) {
-            Toast.makeText(this, "Primero inicia la partida", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        if (player != currentPlayer) return;
 
         int remaining = player == 1 ? extensions1 : extensions2;
-
-        if (extensionArmed) {
-            Toast.makeText(this, "Ya hay una extensión activada", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        if (remaining <= 0) {
-            Toast.makeText(this, "Este jugador ya usó sus 2 extensiones", Toast.LENGTH_SHORT).show();
-            return;
-        }
+        if (remaining <= 0) return;
 
         pushState();
 
         if (player == 1) {
-            extensions1--;
+            extensions1 = 0;
         } else {
-            extensions2--;
+            extensions2 = 0;
         }
 
-        if (secondsLeft <= 0) {
-            secondsLeft = shotSeconds;
-            extensionArmed = false;
-            paused = false;
-            lastTick = System.currentTimeMillis();
-            Toast.makeText(this, "Extensión aplicada", Toast.LENGTH_SHORT).show();
-        } else {
-            extensionArmed = true;
-            Toast.makeText(
-                    this,
-                    "Extensión activada: al llegar a 0 el reloj reinicia una vez",
-                    Toast.LENGTH_SHORT
-            ).show();
-        }
+        secondsLeft = Math.min(shotSeconds + 25, secondsLeft + 25);
+        tenSecondWarningPlayed = secondsLeft <= 10;
+        lastTick = System.currentTimeMillis();
 
         refresh();
+
+        Toast.makeText(this, "Extensión de 25 segundos", Toast.LENGTH_SHORT).show();
     }
 
     private void handleStartPause() {
         if (matchFinished) return;
 
         if (!gameStarted) {
+            pushState();
             gameStarted = true;
+            rackWaitingStart = false;
             paused = false;
-            secondsLeft = shotSeconds;
-            extensionArmed = false;
-            lastTick = System.currentTimeMillis();
+            resetTimerInternal();
             refresh();
-            Toast.makeText(
-                    this,
-                    useTimer ? "Partida iniciada" : "Partida iniciada sin cronómetro",
-                    Toast.LENGTH_SHORT
-            ).show();
             return;
         }
 
-        if (useTimer) togglePause();
-    }
+        if (rackWaitingStart) {
+            pushState();
+            rackWaitingStart = false;
+            paused = false;
+            resetTimerInternal();
+            refresh();
+            return;
+        }
 
-    private void togglePause() {
+        if (!useTimer) return;
+
+        pushState();
         paused = !paused;
         lastTick = System.currentTimeMillis();
         refresh();
     }
 
     private void resetTimerManual() {
-        if (!useTimer) return;
-        extensionArmed = false;
-        secondsLeft = shotSeconds;
-        if (gameStarted && !matchFinished) {
-            paused = false;
-        }
-        lastTick = System.currentTimeMillis();
+        if (!useTimer || !gameStarted || matchFinished || rackWaitingStart) return;
+
+        pushState();
+        resetTimerInternal();
         refresh();
     }
 
     private void resetTimerInternal() {
-        if (!useTimer) {
-            paused = false;
-            extensionArmed = false;
-            refresh();
-            return;
-        }
         secondsLeft = shotSeconds;
         paused = false;
+        tenSecondWarningPlayed = false;
+        timeExpiredDialogShown = false;
         lastTick = System.currentTimeMillis();
-        refresh();
     }
 
     private void editTableName() {
-        showTextDialog(
-                "Nombre de mesa",
-                tableName,
-                value -> {
-                    tableName = value.isEmpty() ? "Mesa 1" : value;
-                    refresh();
-                }
-        );
+        showTextDialog("Nombre de la mesa", tableName, value -> {
+            tableName = value.isEmpty() ? "Mesa 1" : value;
+            refresh();
+        });
     }
 
     private void editPlayerName(int player) {
         String current = player == 1 ? player1 : player2;
-        showTextDialog(
-                player == 1 ? "Nombre del jugador 1" : "Nombre del jugador 2",
-                current,
-                value -> {
-                    String finalName = value.isEmpty()
-                            ? (player == 1 ? "Jugador 1" : "Jugador 2")
-                            : value;
 
-                    if (player == 1) player1 = finalName;
-                    else player2 = finalName;
+        showTextDialog("Nombre del jugador", current, value -> {
+            String name = value.trim();
 
-                    refresh();
-                }
-        );
-    }
+            if (player == 1) {
+                player1 = name.isEmpty() ? "Jugador 1" : name;
+            } else {
+                player2 = name.isEmpty() ? "Jugador 2" : name;
+            }
 
-    private void editTarget() {
-        showNumberDialog(
-                "Distancia del partido",
-                target,
-                1,
-                999,
-                value -> {
-                    target = value;
-                    refresh();
-                }
-        );
+            refresh();
+        });
     }
 
     private void editShotSeconds() {
-        if (!useTimer) {
-            Toast.makeText(this, "Esta partida está configurada sin cronómetro", Toast.LENGTH_SHORT).show();
-            return;
-        }
         showNumberDialog(
                 "Segundos por tiro",
                 shotSeconds,
-                5,
-                300,
+                10,
+                120,
                 value -> {
                     shotSeconds = value;
-                    extensionArmed = false;
-                    resetTimerManual();
+                    secondsLeft = Math.min(secondsLeft, shotSeconds + 25);
+                    refresh();
                 }
         );
     }
 
-    private interface StringConsumer {
-        void accept(String value);
-    }
-
-    private interface IntConsumer {
-        void accept(int value);
-    }
-
-    private void showTextDialog(String title, String current, StringConsumer onSave) {
-        EditText input = field(current, false);
+    private void showTextDialog(String title, String value, StringSaver onSave) {
+        EditText input = new EditText(this);
+        input.setText(value);
+        input.setSingleLine(true);
+        input.setTextSize(18);
         input.setSelectAllOnFocus(true);
 
         AlertDialog dialog = new AlertDialog.Builder(this)
@@ -965,7 +1176,7 @@ public class MainActivity extends Activity {
 
         dialog.setOnShowListener(v ->
                 dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v2 -> {
-                    onSave.accept(input.getText().toString().trim());
+                    onSave.save(input.getText().toString().trim());
                     dialog.dismiss();
                 })
         );
@@ -978,9 +1189,13 @@ public class MainActivity extends Activity {
             int current,
             int min,
             int max,
-            IntConsumer onSave
+            IntSaver onSave
     ) {
-        EditText input = field(String.valueOf(current), true);
+        EditText input = new EditText(this);
+        input.setText(String.valueOf(current));
+        input.setInputType(InputType.TYPE_CLASS_NUMBER);
+        input.setSingleLine(true);
+        input.setTextSize(18);
         input.setSelectAllOnFocus(true);
 
         AlertDialog dialog = new AlertDialog.Builder(this)
@@ -995,7 +1210,7 @@ public class MainActivity extends Activity {
                     try {
                         int value = Integer.parseInt(input.getText().toString().trim());
                         value = Math.max(min, Math.min(max, value));
-                        onSave.accept(value);
+                        onSave.save(value);
                         dialog.dismiss();
                     } catch (Throwable ignored) {
                         Toast.makeText(this, "Escribe un número válido", Toast.LENGTH_SHORT).show();
@@ -1006,6 +1221,243 @@ public class MainActivity extends Activity {
         dialog.show();
     }
 
+    private void requestNewGame() {
+        boolean hasProgress =
+                gameStarted ||
+                matchFinished ||
+                score1 > 0 ||
+                score2 > 0 ||
+                rackNumber > 1 ||
+                fouls1 > 0 ||
+                fouls2 > 0;
+
+        if (!hasProgress) {
+            showNewGameDialog();
+            return;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("Nuevo partido")
+                .setMessage("Se borrará el partido actual. ¿Continuar?")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Continuar", (dialog, which) -> showNewGameDialog())
+                .show();
+    }
+
+    private void showNewGameDialog() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(5), dp(20), 0);
+
+        EditText p1 = field(player1, false);
+        EditText p2 = field(player2, false);
+        EditText race = field(String.valueOf(raceTo), true);
+        EditText time = field(String.valueOf(shotSeconds), true);
+
+        Spinner gameSpinner = dialogSpinner(
+                new String[]{"Bola 8", "Bola 9", "Bola 10"},
+                gameType == 8 ? 0 : (gameType == 9 ? 1 : 2)
+        );
+
+        CheckBox timerOption = new CheckBox(this);
+        timerOption.setText("Usar cronómetro");
+        timerOption.setTextSize(16);
+        timerOption.setChecked(useTimer);
+        timerOption.setPadding(0, dp(6), 0, dp(2));
+
+        time.setEnabled(useTimer);
+        time.setAlpha(useTimer ? 1f : .45f);
+
+        timerOption.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            time.setEnabled(isChecked);
+            time.setAlpha(isChecked ? 1f : .45f);
+        });
+
+        Spinner breakSpinner = dialogSpinner(
+                new String[]{
+                        "Saque alternado",
+                        "Ganador del rack rompe el siguiente"
+                },
+                breakMode
+        );
+
+        RadioGroup breakerGroup = new RadioGroup(this);
+        breakerGroup.setOrientation(RadioGroup.HORIZONTAL);
+        breakerGroup.setGravity(Gravity.CENTER_VERTICAL);
+
+        RadioButton breaker1 = new RadioButton(this);
+        breaker1.setText("Jugador 1");
+        breaker1.setTextSize(15);
+        breaker1.setId(View.generateViewId());
+
+        RadioButton breaker2 = new RadioButton(this);
+        breaker2.setText("Jugador 2");
+        breaker2.setTextSize(15);
+        breaker2.setId(View.generateViewId());
+
+        breakerGroup.addView(breaker1, new RadioGroup.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        breakerGroup.addView(breaker2, new RadioGroup.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        if (firstBreaker == 2) {
+            breaker2.setChecked(true);
+        } else {
+            breaker1.setChecked(true);
+        }
+
+        box.addView(dialogLabel("Modalidad"));
+        box.addView(gameSpinner);
+        box.addView(dialogLabel("Jugador 1"));
+        box.addView(p1);
+        box.addView(dialogLabel("Jugador 2"));
+        box.addView(p2);
+        box.addView(dialogLabel("Carrera a racks"));
+        box.addView(race);
+        box.addView(timerOption);
+        box.addView(dialogLabel("Segundos por tiro"));
+        box.addView(time);
+        box.addView(dialogLabel("Formato de saque"));
+        box.addView(breakSpinner);
+        box.addView(dialogLabel("¿Quién rompe primero?"));
+        box.addView(breakerGroup);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Nuevo partido de pool")
+                .setView(box)
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Preparar", null)
+                .create();
+
+        dialog.setOnShowListener(v ->
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v2 -> {
+                    try {
+                        String n1 = p1.getText().toString().trim();
+                        String n2 = p2.getText().toString().trim();
+
+                        int newRace = Integer.parseInt(race.getText().toString().trim());
+                        boolean newUseTimer = timerOption.isChecked();
+                        int newTime = shotSeconds;
+
+                        if (newUseTimer) {
+                            newTime = Integer.parseInt(time.getText().toString().trim());
+                        }
+
+                        player1 = n1.isEmpty() ? "Jugador 1" : n1;
+                        player2 = n2.isEmpty() ? "Jugador 2" : n2;
+
+                        int gamePosition = gameSpinner.getSelectedItemPosition();
+                        gameType = gamePosition == 0 ? 8 : (gamePosition == 1 ? 9 : 10);
+
+                        raceTo = Math.max(1, Math.min(99, newRace));
+                        useTimer = newUseTimer;
+
+                        if (useTimer) {
+                            shotSeconds = Math.max(10, Math.min(120, newTime));
+                        }
+
+                        breakMode = breakSpinner.getSelectedItemPosition() == 0
+                                ? BREAK_ALTERNATE
+                                : BREAK_WINNER;
+
+                        firstBreaker = breaker2.isChecked() ? 2 : 1;
+                        breaker = firstBreaker;
+                        currentPlayer = breaker;
+
+                        score1 = 0;
+                        score2 = 0;
+                        rackNumber = 1;
+
+                        fouls1 = 0;
+                        fouls2 = 0;
+
+                        group1 = GROUP_OPEN;
+                        group2 = GROUP_OPEN;
+
+                        extensions1 = 1;
+                        extensions2 = 1;
+
+                        breakShotPending = true;
+                        pushOutAvailable = false;
+                        pushOutInProgress = false;
+
+                        secondsLeft = shotSeconds;
+                        paused = false;
+                        gameStarted = false;
+                        matchFinished = false;
+                        rackWaitingStart = false;
+
+                        tenSecondWarningPlayed = false;
+                        timeExpiredDialogShown = false;
+
+                        history.clear();
+                        lastTick = System.currentTimeMillis();
+
+                        recoveryActive = true;
+                        lastPersistentCore = "";
+                        lastPersistedSeconds = -1;
+
+                        refresh();
+                        dialog.dismiss();
+                    } catch (Throwable ignored) {
+                        Toast.makeText(
+                                this,
+                                "Revisa la carrera y los segundos por tiro",
+                                Toast.LENGTH_SHORT
+                        ).show();
+                    }
+                })
+        );
+
+        dialog.show();
+    }
+
+    private Spinner dialogSpinner(String[] options, int selection) {
+        Spinner spinner = new Spinner(this);
+
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(
+                this,
+                android.R.layout.simple_spinner_dropdown_item,
+                options
+        );
+
+        spinner.setAdapter(adapter);
+        spinner.setSelection(Math.max(0, Math.min(options.length - 1, selection)));
+        return spinner;
+    }
+
+    private EditText field(String value, boolean numeric) {
+        EditText e = new EditText(this);
+        e.setText(value);
+        e.setSingleLine(true);
+        e.setTextSize(17);
+
+        if (numeric) {
+            e.setInputType(InputType.TYPE_CLASS_NUMBER);
+        }
+
+        return e;
+    }
+
+    private TextView dialogLabel(String value) {
+        TextView t = text(value, 13, Color.DKGRAY, false);
+        t.setPadding(0, dp(5), 0, 0);
+        return t;
+    }
+
+    private void showWinner(int winner, String reason) {
+        new AlertDialog.Builder(this)
+                .setTitle("Partido terminado")
+                .setMessage(
+                        playerName(winner) + " ganó la partida.\n\n" +
+                        "Marcador final: " + score1 + " - " + score2 + "\n" +
+                        reason
+                )
+                .setPositiveButton("Cerrar", null)
+                .setNegativeButton("Nuevo partido", (dialog, which) -> showNewGameDialog())
+                .show();
+    }
+
     private SharedPreferences recoveryPrefs() {
         return getSharedPreferences(RECOVERY_PREFS, MODE_PRIVATE);
     }
@@ -1013,6 +1465,7 @@ public class MainActivity extends Activity {
     private boolean restoreSavedMatch() {
         try {
             SharedPreferences p = recoveryPrefs();
+
             if (!p.getBoolean("has_saved_match", false)) {
                 return false;
             }
@@ -1021,32 +1474,48 @@ public class MainActivity extends Activity {
             player1 = p.getString("player1", "Jugador 1");
             player2 = p.getString("player2", "Jugador 2");
 
+            gameType = p.getInt("gameType", 9);
+            raceTo = p.getInt("raceTo", 7);
             score1 = p.getInt("score1", 0);
             score2 = p.getInt("score2", 0);
-            innings1 = p.getInt("innings1", 1);
-            innings2 = p.getInt("innings2", 0);
-            maxRun1 = p.getInt("maxRun1", 0);
-            maxRun2 = p.getInt("maxRun2", 0);
-            currentRun = p.getInt("currentRun", 0);
-            currentPlayer = p.getInt("currentPlayer", 1);
-            target = p.getInt("target", 30);
-            shotSeconds = p.getInt("shotSeconds", 40);
-            secondsLeft = p.getInt("secondsLeft", shotSeconds);
+            rackNumber = p.getInt("rackNumber", 1);
 
-            extensions1 = p.getInt("extensions1", 2);
-            extensions2 = p.getInt("extensions2", 2);
-            extensionArmed = p.getBoolean("extensionArmed", false);
+            currentPlayer = p.getInt("currentPlayer", 1);
+            breaker = p.getInt("breaker", 1);
+            firstBreaker = p.getInt("firstBreaker", 1);
+            breakMode = p.getInt("breakMode", BREAK_ALTERNATE);
+
+            breakShotPending = p.getBoolean("breakShotPending", true);
+            pushOutAvailable = p.getBoolean("pushOutAvailable", false);
+            pushOutInProgress = p.getBoolean("pushOutInProgress", false);
+
+            fouls1 = p.getInt("fouls1", 0);
+            fouls2 = p.getInt("fouls2", 0);
+
+            group1 = p.getInt("group1", GROUP_OPEN);
+            group2 = p.getInt("group2", GROUP_OPEN);
 
             useTimer = p.getBoolean("useTimer", true);
+            shotSeconds = p.getInt("shotSeconds", 35);
+            secondsLeft = p.getInt("secondsLeft", shotSeconds);
+
+            extensions1 = p.getInt("extensions1", 1);
+            extensions2 = p.getInt("extensions2", 1);
+
             gameStarted = p.getBoolean("gameStarted", false);
+            rackWaitingStart = p.getBoolean("rackWaitingStart", false);
             matchFinished = false;
 
             paused = useTimer && gameStarted;
+            if (rackWaitingStart) paused = true;
 
             history.clear();
             recoveryActive = true;
             lastPersistentCore = "";
             lastPersistedSeconds = -1;
+            tenSecondWarningPlayed = secondsLeft <= 10;
+            timeExpiredDialogShown = false;
+
             return true;
         } catch (Throwable ignored) {
             return false;
@@ -1054,15 +1523,12 @@ public class MainActivity extends Activity {
     }
 
     private void showRecoveryDialog() {
-        String message;
-        if (useTimer && gameStarted) {
-            message = "Se encontró una partida sin terminar. El marcador fue recuperado y el cronómetro quedó en pausa.";
-        } else {
-            message = "Se encontró una partida sin terminar. ¿Deseas continuar desde donde quedó?";
-        }
+        String message = useTimer && gameStarted
+                ? "Se encontró un partido sin terminar. El marcador fue recuperado y el cronómetro quedó en pausa."
+                : "Se encontró un partido sin terminar. ¿Deseas continuar desde donde quedó?";
 
         new AlertDialog.Builder(this)
-                .setTitle("Partida interrumpida detectada")
+                .setTitle("Partido interrumpido detectado")
                 .setMessage(message)
                 .setCancelable(false)
                 .setNegativeButton("Descartar y nueva", (dialog, which) -> {
@@ -1070,7 +1536,7 @@ public class MainActivity extends Activity {
                     resetRecoveredMatch();
                     showNewGameDialog();
                 })
-                .setPositiveButton("Continuar partida", (dialog, which) -> {
+                .setPositiveButton("Continuar partido", (dialog, which) -> {
                     recoveryActive = true;
                     savePersistentState(true);
                     refresh();
@@ -1081,24 +1547,33 @@ public class MainActivity extends Activity {
     private void resetRecoveredMatch() {
         player1 = "Jugador 1";
         player2 = "Jugador 2";
+        gameType = 9;
+        raceTo = 7;
         score1 = 0;
         score2 = 0;
-        innings1 = 1;
-        innings2 = 0;
-        maxRun1 = 0;
-        maxRun2 = 0;
-        currentRun = 0;
+        rackNumber = 1;
         currentPlayer = 1;
-        target = 30;
-        shotSeconds = 40;
-        secondsLeft = 40;
-        extensions1 = 2;
-        extensions2 = 2;
-        extensionArmed = false;
+        breaker = 1;
+        firstBreaker = 1;
+        breakMode = BREAK_ALTERNATE;
+        breakShotPending = true;
+        pushOutAvailable = false;
+        pushOutInProgress = false;
+        fouls1 = 0;
+        fouls2 = 0;
+        group1 = GROUP_OPEN;
+        group2 = GROUP_OPEN;
+        useTimer = true;
+        shotSeconds = 35;
+        secondsLeft = 35;
+        extensions1 = 1;
+        extensions2 = 1;
         paused = false;
         gameStarted = false;
         matchFinished = false;
-        useTimer = true;
+        rackWaitingStart = false;
+        tenSecondWarningPlayed = false;
+        timeExpiredDialogShown = false;
         history.clear();
         recoveryActive = false;
         lastPersistentCore = "";
@@ -1111,41 +1586,44 @@ public class MainActivity extends Activity {
         return tableName + "\u0001" +
                 player1 + "\u0001" +
                 player2 + "\u0001" +
+                gameType + "\u0001" +
+                raceTo + "\u0001" +
                 score1 + "\u0001" +
                 score2 + "\u0001" +
-                innings1 + "\u0001" +
-                innings2 + "\u0001" +
-                maxRun1 + "\u0001" +
-                maxRun2 + "\u0001" +
-                currentRun + "\u0001" +
+                rackNumber + "\u0001" +
                 currentPlayer + "\u0001" +
-                target + "\u0001" +
+                breaker + "\u0001" +
+                firstBreaker + "\u0001" +
+                breakMode + "\u0001" +
+                breakShotPending + "\u0001" +
+                pushOutAvailable + "\u0001" +
+                pushOutInProgress + "\u0001" +
+                fouls1 + "\u0001" +
+                fouls2 + "\u0001" +
+                group1 + "\u0001" +
+                group2 + "\u0001" +
+                useTimer + "\u0001" +
                 shotSeconds + "\u0001" +
                 extensions1 + "\u0001" +
                 extensions2 + "\u0001" +
-                extensionArmed + "\u0001" +
                 paused + "\u0001" +
                 gameStarted + "\u0001" +
-                useTimer;
+                rackWaitingStart;
     }
 
     private boolean hasMeaningfulMatchState() {
         return gameStarted ||
-                score1 != 0 ||
-                score2 != 0 ||
-                innings1 != 1 ||
-                innings2 != 0 ||
-                maxRun1 != 0 ||
-                maxRun2 != 0 ||
-                currentRun != 0 ||
-                currentPlayer != 1 ||
-                extensions1 != 2 ||
-                extensions2 != 2 ||
+                score1 > 0 ||
+                score2 > 0 ||
+                rackNumber > 1 ||
+                fouls1 > 0 ||
+                fouls2 > 0 ||
                 !"Jugador 1".equals(player1) ||
                 !"Jugador 2".equals(player2) ||
-                target != 30 ||
-                shotSeconds != 40 ||
-                !useTimer;
+                raceTo != 7 ||
+                gameType != 9 ||
+                !useTimer ||
+                breakMode != BREAK_ALTERNATE;
     }
 
     private void savePersistentState(boolean force) {
@@ -1178,23 +1656,29 @@ public class MainActivity extends Activity {
                 .putString("tableName", tableName)
                 .putString("player1", player1)
                 .putString("player2", player2)
+                .putInt("gameType", gameType)
+                .putInt("raceTo", raceTo)
                 .putInt("score1", score1)
                 .putInt("score2", score2)
-                .putInt("innings1", innings1)
-                .putInt("innings2", innings2)
-                .putInt("maxRun1", maxRun1)
-                .putInt("maxRun2", maxRun2)
-                .putInt("currentRun", currentRun)
+                .putInt("rackNumber", rackNumber)
                 .putInt("currentPlayer", currentPlayer)
-                .putInt("target", target)
+                .putInt("breaker", breaker)
+                .putInt("firstBreaker", firstBreaker)
+                .putInt("breakMode", breakMode)
+                .putBoolean("breakShotPending", breakShotPending)
+                .putBoolean("pushOutAvailable", pushOutAvailable)
+                .putBoolean("pushOutInProgress", pushOutInProgress)
+                .putInt("fouls1", fouls1)
+                .putInt("fouls2", fouls2)
+                .putInt("group1", group1)
+                .putInt("group2", group2)
+                .putBoolean("useTimer", useTimer)
                 .putInt("shotSeconds", shotSeconds)
                 .putInt("secondsLeft", secondsLeft)
                 .putInt("extensions1", extensions1)
                 .putInt("extensions2", extensions2)
-                .putBoolean("extensionArmed", extensionArmed)
-                .putBoolean("paused", paused)
                 .putBoolean("gameStarted", gameStarted)
-                .putBoolean("useTimer", useTimer);
+                .putBoolean("rackWaitingStart", rackWaitingStart);
 
         if (force || coreChanged) {
             e.commit();
@@ -1211,6 +1695,7 @@ public class MainActivity extends Activity {
             recoveryPrefs().edit().clear().commit();
         } catch (Throwable ignored) {
         }
+
         recoveryActive = false;
         lastPersistentCore = "";
         lastPersistedSeconds = -1;
@@ -1229,176 +1714,35 @@ public class MainActivity extends Activity {
                 .show();
     }
 
-    private void requestNewGame() {
-        boolean hasProgress =
-                gameStarted ||
-                matchFinished ||
-                score1 > 0 ||
-                score2 > 0 ||
-                innings1 > 1 ||
-                innings2 > 0 ||
-                extensions1 < 2 ||
-                extensions2 < 2;
-
-        if (!hasProgress) {
-            showNewGameDialog();
-            return;
-        }
-
-        new AlertDialog.Builder(this)
-                .setTitle("Nuevo partido")
-                .setMessage("Se borrará el marcador actual, las entradas y las extensiones utilizadas. ¿Continuar?")
-                .setNegativeButton("Cancelar", null)
-                .setPositiveButton("Continuar", (dialog, which) -> showNewGameDialog())
-                .show();
-    }
-
-    private void showWinner(int player) {
-        recoveryActive = false;
-        clearSavedMatch();
-
-        String winner = player == 1 ? player1 : player2;
-
-        String finalNote = useTimer
-                ? "\n\nEl cronómetro quedó detenido."
-                : "\n\nPartida jugada sin cronómetro.";
-
-        new AlertDialog.Builder(this)
-                .setTitle("Partido terminado")
-                .setMessage(
-                        winner + " alcanzó " + target + " puntos.\n\n" +
-                        "Marcador final: " + score1 + " - " + score2 +
-                        finalNote
-                )
-                .setPositiveButton("Cerrar", null)
-                .setNegativeButton("Nuevo partido", (dialog, which) -> showNewGameDialog())
-                .show();
-    }
-
-    private void showNewGameDialog() {
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(20), dp(7), dp(20), 0);
-
-        EditText p1 = field(player1, false);
-        EditText p2 = field(player2, false);
-        EditText distance = field(String.valueOf(target), true);
-        EditText time = field(String.valueOf(shotSeconds), true);
-
-        CheckBox timerOption = new CheckBox(this);
-        timerOption.setText("Usar cronómetro");
-        timerOption.setTextSize(16);
-        timerOption.setChecked(useTimer);
-        timerOption.setPadding(0, dp(8), 0, dp(4));
-
-        time.setEnabled(useTimer);
-        time.setAlpha(useTimer ? 1f : .45f);
-
-        timerOption.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            time.setEnabled(isChecked);
-            time.setAlpha(isChecked ? 1f : .45f);
-        });
-
-        box.addView(dialogLabel("Jugador 1"));
-        box.addView(p1);
-        box.addView(dialogLabel("Jugador 2"));
-        box.addView(p2);
-        box.addView(dialogLabel("Distancia del partido"));
-        box.addView(distance);
-        box.addView(timerOption);
-        box.addView(dialogLabel("Segundos por tiro"));
-        box.addView(time);
-
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("Nuevo partido")
-                .setView(box)
-                .setNegativeButton("Cancelar", null)
-                .setPositiveButton("Preparar", null)
-                .create();
-
-        dialog.setOnShowListener(v ->
-                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v2 -> {
-                    try {
-                        String n1 = p1.getText().toString().trim();
-                        String n2 = p2.getText().toString().trim();
-                        int newTarget = Integer.parseInt(distance.getText().toString().trim());
-                        boolean newUseTimer = timerOption.isChecked();
-                        int newTime = shotSeconds;
-                        if (newUseTimer) {
-                            newTime = Integer.parseInt(time.getText().toString().trim());
-                        }
-
-                        player1 = n1.isEmpty() ? "Jugador 1" : n1;
-                        player2 = n2.isEmpty() ? "Jugador 2" : n2;
-
-                        target = Math.max(1, Math.min(999, newTarget));
-                        useTimer = newUseTimer;
-                        if (newUseTimer) {
-                            shotSeconds = Math.max(5, Math.min(300, newTime));
-                        }
-
-                        score1 = 0;
-                        score2 = 0;
-                        innings1 = 1;
-                        innings2 = 0;
-                        maxRun1 = 0;
-                        maxRun2 = 0;
-                        currentRun = 0;
-                        currentPlayer = 1;
-                        secondsLeft = shotSeconds;
-
-                        extensions1 = 2;
-                        extensions2 = 2;
-                        extensionArmed = false;
-
-                        paused = false;
-                        gameStarted = false;
-                        matchFinished = false;
-                        history.clear();
-                        lastTick = System.currentTimeMillis();
-
-                        recoveryActive = true;
-                        lastPersistentCore = "";
-                        lastPersistedSeconds = -1;
-
-                        refresh();
-                        dialog.dismiss();
-                    } catch (Throwable ignored) {
-                        Toast.makeText(this, "Revisa la distancia y el tiempo", Toast.LENGTH_SHORT).show();
-                    }
-                })
-        );
-
-        dialog.show();
-    }
-
-    private EditText field(String value, boolean numeric) {
-        EditText e = new EditText(this);
-        e.setText(value);
-        e.setSingleLine(true);
-        e.setTextSize(18);
-        if (numeric) e.setInputType(InputType.TYPE_CLASS_NUMBER);
-        return e;
-    }
-
-    private TextView dialogLabel(String value) {
-        TextView t = text(value, 14, Color.DKGRAY, false);
-        t.setPadding(0, dp(6), 0, 0);
-        return t;
-    }
-
     private void pushState() {
         history.push(new State(
-                player1, player2,
-                score1, score2,
-                innings1, innings2,
-                maxRun1, maxRun2,
-                currentRun, currentPlayer,
-                target, shotSeconds,
-                secondsLeft, paused,
-                gameStarted, matchFinished,
-                extensions1, extensions2,
-                extensionArmed
+                player1,
+                player2,
+                gameType,
+                raceTo,
+                score1,
+                score2,
+                rackNumber,
+                currentPlayer,
+                breaker,
+                firstBreaker,
+                breakMode,
+                breakShotPending,
+                pushOutAvailable,
+                pushOutInProgress,
+                fouls1,
+                fouls2,
+                group1,
+                group2,
+                useTimer,
+                shotSeconds,
+                secondsLeft,
+                extensions1,
+                extensions2,
+                paused,
+                gameStarted,
+                matchFinished,
+                rackWaitingStart
         ));
 
         while (history.size() > 60) {
@@ -1413,25 +1757,37 @@ public class MainActivity extends Activity {
 
         player1 = s.player1;
         player2 = s.player2;
+        gameType = s.gameType;
+        raceTo = s.raceTo;
         score1 = s.score1;
         score2 = s.score2;
-        innings1 = s.innings1;
-        innings2 = s.innings2;
-        maxRun1 = s.maxRun1;
-        maxRun2 = s.maxRun2;
-        currentRun = s.currentRun;
+        rackNumber = s.rackNumber;
         currentPlayer = s.currentPlayer;
-        target = s.target;
+        breaker = s.breaker;
+        firstBreaker = s.firstBreaker;
+        breakMode = s.breakMode;
+        breakShotPending = s.breakShotPending;
+        pushOutAvailable = s.pushOutAvailable;
+        pushOutInProgress = s.pushOutInProgress;
+        fouls1 = s.fouls1;
+        fouls2 = s.fouls2;
+        group1 = s.group1;
+        group2 = s.group2;
+        useTimer = s.useTimer;
         shotSeconds = s.shotSeconds;
         secondsLeft = s.secondsLeft;
+        extensions1 = s.extensions1;
+        extensions2 = s.extensions2;
         paused = s.paused;
         gameStarted = s.gameStarted;
         matchFinished = s.matchFinished;
-        extensions1 = s.extensions1;
-        extensions2 = s.extensions2;
-        extensionArmed = s.extensionArmed;
+        rackWaitingStart = s.rackWaitingStart;
 
+        tenSecondWarningPlayed = secondsLeft <= 10;
+        timeExpiredDialogShown = false;
         lastTick = System.currentTimeMillis();
+
+        recoveryActive = !matchFinished;
         refresh();
     }
 
@@ -1441,31 +1797,42 @@ public class MainActivity extends Activity {
             try {
                 long now = System.currentTimeMillis();
 
-                if (useTimer && gameStarted && !matchFinished && !paused && secondsLeft > 0 && lastTick > 0) {
+                if (useTimer &&
+                        gameStarted &&
+                        !matchFinished &&
+                        !paused &&
+                        !rackWaitingStart &&
+                        secondsLeft > 0 &&
+                        lastTick > 0) {
+
                     long elapsed = now - lastTick;
 
                     if (elapsed >= 1000L) {
                         int previousSeconds = secondsLeft;
                         int steps = (int) (elapsed / 1000L);
+
                         secondsLeft = Math.max(0, secondsLeft - steps);
                         lastTick += steps * 1000L;
 
-                        if (previousSeconds > 0 && secondsLeft == 0) {
-                            playTimeExpiredBeep();
-
-                            if (extensionArmed) {
-                                secondsLeft = shotSeconds;
-                                extensionArmed = false;
-                                lastTick = now;
-                                Toast.makeText(
-                                        MainActivity.this,
-                                        "Extensión: tiempo reiniciado",
-                                        Toast.LENGTH_SHORT
-                                ).show();
-                            }
+                        if (!tenSecondWarningPlayed &&
+                                previousSeconds > 10 &&
+                                secondsLeft <= 10) {
+                            tenSecondWarningPlayed = true;
+                            playWarningBeep();
                         }
 
-                        refresh();
+                        if (previousSeconds > 0 && secondsLeft == 0) {
+                            playTimeExpiredBeep();
+                            paused = true;
+                            refresh();
+
+                            if (!timeExpiredDialogShown) {
+                                timeExpiredDialogShown = true;
+                                handler.post(MainActivity.this::showTimeExpiredDialog);
+                            }
+                        } else {
+                            refresh();
+                        }
                     }
                 } else {
                     lastTick = now;
@@ -1477,14 +1844,83 @@ public class MainActivity extends Activity {
         }
     };
 
+    private void showTimeExpiredDialog() {
+        if (matchFinished || !gameStarted) {
+            timeExpiredDialogShown = false;
+            return;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("Tiempo agotado")
+                .setMessage("El tiempo agotado se considera falta. ¿Registrar la falta?")
+                .setCancelable(false)
+                .setNegativeButton("No registrar", (dialog, which) -> {
+                    timeExpiredDialogShown = false;
+                    paused = true;
+                    refresh();
+                })
+                .setPositiveButton("Registrar falta", (dialog, which) -> {
+                    timeExpiredDialogShown = false;
+                    paused = false;
+                    registerFoul();
+                })
+                .show();
+    }
+
+    private void playWarningBeep() {
+        try {
+            if (toneGenerator == null) {
+                toneGenerator = new ToneGenerator(AudioManager.STREAM_ALARM, 80);
+            }
+
+            toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 100);
+        } catch (Throwable ignored) {
+        }
+    }
+
     private void playTimeExpiredBeep() {
         try {
             if (toneGenerator == null) {
                 toneGenerator = new ToneGenerator(AudioManager.STREAM_ALARM, 100);
             }
-            toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 250);
+
+            toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 300);
         } catch (Throwable ignored) {
         }
+    }
+
+    private boolean isNineTen() {
+        return gameType == 9 || gameType == 10;
+    }
+
+    private int currentFouls() {
+        return playerFouls(currentPlayer);
+    }
+
+    private int playerFouls(int player) {
+        return player == 1 ? fouls1 : fouls2;
+    }
+
+    private void setFouls(int player, int value) {
+        if (player == 1) {
+            fouls1 = Math.max(0, value);
+        } else {
+            fouls2 = Math.max(0, value);
+        }
+    }
+
+    private int otherPlayer(int player) {
+        return player == 1 ? 2 : 1;
+    }
+
+    private String playerName(int player) {
+        return player == 1 ? player1 : player2;
+    }
+
+    private String gameName() {
+        if (gameType == 8) return "Bola 8";
+        if (gameType == 10) return "Bola 10";
+        return "Bola 9";
     }
 
     private void showFallback(Throwable error) {
@@ -1493,12 +1929,14 @@ public class MainActivity extends Activity {
         box.setPadding(dp(20), dp(20), dp(20), dp(20));
         box.setBackgroundColor(Color.WHITE);
 
-        TextView title = text("Club Billar Marcothon", 24, Color.BLACK, true);
+        TextView title = text("Club Billar Marcothon · Pool", 24, Color.BLACK, true);
         TextView msg = text(
                 "La interfaz no pudo iniciar.\n\n" +
                 error.getClass().getSimpleName() + ": " +
                 String.valueOf(error.getMessage()),
-                15, Color.DKGRAY, false
+                15,
+                Color.DKGRAY,
+                false
         );
 
         box.addView(title);
@@ -1510,17 +1948,25 @@ public class MainActivity extends Activity {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
+    private interface StringSaver {
+        void save(String value);
+    }
+
+    private interface IntSaver {
+        void save(int value);
+    }
+
     private class TimerRingView extends View {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final RectF arc = new RectF();
 
-        private int seconds = 40;
-        private int total = 40;
+        private int seconds = 35;
+        private int total = 35;
         private boolean isPaused = false;
-        private boolean isExtensionArmed = false;
         private boolean isGameStarted = false;
         private boolean isMatchFinished = false;
         private boolean isTimerEnabled = true;
+        private boolean isRackWaiting = false;
 
         TimerRingView() {
             super(MainActivity.this);
@@ -1531,18 +1977,18 @@ public class MainActivity extends Activity {
                 int seconds,
                 int total,
                 boolean paused,
-                boolean extensionArmed,
                 boolean gameStarted,
                 boolean matchFinished,
-                boolean timerEnabled
+                boolean timerEnabled,
+                boolean rackWaiting
         ) {
             this.seconds = Math.max(0, seconds);
             this.total = Math.max(1, total);
             this.isPaused = paused;
-            this.isExtensionArmed = extensionArmed;
             this.isGameStarted = gameStarted;
             this.isMatchFinished = matchFinished;
             this.isTimerEnabled = timerEnabled;
+            this.isRackWaiting = rackWaiting;
             invalidate();
         }
 
@@ -1585,9 +2031,8 @@ public class MainActivity extends Activity {
             }
 
             int ringColor;
-            if (seconds == 0) {
-                ringColor = RED;
-            } else if (seconds <= 5) {
+
+            if (seconds <= 5) {
                 ringColor = RED;
             } else if (seconds <= 10) {
                 ringColor = ORANGE;
@@ -1612,24 +2057,25 @@ public class MainActivity extends Activity {
             canvas.drawText(String.valueOf(seconds), cx, numberY, paint);
 
             paint.setTypeface(Typeface.DEFAULT);
-            paint.setTextSize(size * .10f);
+            paint.setTextSize(size * .09f);
 
             String sub;
+
             if (isMatchFinished) {
                 paint.setColor(YELLOW);
                 sub = "FINAL";
             } else if (!isGameStarted) {
                 paint.setColor(YELLOW);
                 sub = "LISTO";
+            } else if (isRackWaiting) {
+                paint.setColor(YELLOW);
+                sub = "RACK LISTO";
             } else if (isPaused) {
                 paint.setColor(YELLOW);
                 sub = "PAUSA";
             } else if (seconds == 0) {
                 paint.setColor(RED);
                 sub = "TIEMPO";
-            } else if (isExtensionArmed) {
-                paint.setColor(ORANGE);
-                sub = "EXTENSIÓN";
             } else {
                 paint.setColor(MUTED);
                 sub = "segundos";
@@ -1642,64 +2088,88 @@ public class MainActivity extends Activity {
     private static class State {
         final String player1;
         final String player2;
+        final int gameType;
+        final int raceTo;
         final int score1;
         final int score2;
-        final int innings1;
-        final int innings2;
-        final int maxRun1;
-        final int maxRun2;
-        final int currentRun;
+        final int rackNumber;
         final int currentPlayer;
-        final int target;
+        final int breaker;
+        final int firstBreaker;
+        final int breakMode;
+        final boolean breakShotPending;
+        final boolean pushOutAvailable;
+        final boolean pushOutInProgress;
+        final int fouls1;
+        final int fouls2;
+        final int group1;
+        final int group2;
+        final boolean useTimer;
         final int shotSeconds;
         final int secondsLeft;
+        final int extensions1;
+        final int extensions2;
         final boolean paused;
         final boolean gameStarted;
         final boolean matchFinished;
-        final int extensions1;
-        final int extensions2;
-        final boolean extensionArmed;
+        final boolean rackWaitingStart;
 
         State(
                 String player1,
                 String player2,
+                int gameType,
+                int raceTo,
                 int score1,
                 int score2,
-                int innings1,
-                int innings2,
-                int maxRun1,
-                int maxRun2,
-                int currentRun,
+                int rackNumber,
                 int currentPlayer,
-                int target,
+                int breaker,
+                int firstBreaker,
+                int breakMode,
+                boolean breakShotPending,
+                boolean pushOutAvailable,
+                boolean pushOutInProgress,
+                int fouls1,
+                int fouls2,
+                int group1,
+                int group2,
+                boolean useTimer,
                 int shotSeconds,
                 int secondsLeft,
+                int extensions1,
+                int extensions2,
                 boolean paused,
                 boolean gameStarted,
                 boolean matchFinished,
-                int extensions1,
-                int extensions2,
-                boolean extensionArmed
+                boolean rackWaitingStart
         ) {
             this.player1 = player1;
             this.player2 = player2;
+            this.gameType = gameType;
+            this.raceTo = raceTo;
             this.score1 = score1;
             this.score2 = score2;
-            this.innings1 = innings1;
-            this.innings2 = innings2;
-            this.maxRun1 = maxRun1;
-            this.maxRun2 = maxRun2;
-            this.currentRun = currentRun;
+            this.rackNumber = rackNumber;
             this.currentPlayer = currentPlayer;
-            this.target = target;
+            this.breaker = breaker;
+            this.firstBreaker = firstBreaker;
+            this.breakMode = breakMode;
+            this.breakShotPending = breakShotPending;
+            this.pushOutAvailable = pushOutAvailable;
+            this.pushOutInProgress = pushOutInProgress;
+            this.fouls1 = fouls1;
+            this.fouls2 = fouls2;
+            this.group1 = group1;
+            this.group2 = group2;
+            this.useTimer = useTimer;
             this.shotSeconds = shotSeconds;
             this.secondsLeft = secondsLeft;
+            this.extensions1 = extensions1;
+            this.extensions2 = extensions2;
             this.paused = paused;
             this.gameStarted = gameStarted;
             this.matchFinished = matchFinished;
-            this.extensions1 = extensions1;
-            this.extensions2 = extensions2;
-            this.extensionArmed = extensionArmed;
+            this.rackWaitingStart = rackWaitingStart;
         }
     }
 }
