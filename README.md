@@ -99,3 +99,13 @@ Incluye:
 - Deshacer.
 - Guardado y recuperación automática tras apagado/cierre inesperado.
 - Botón rojo X con confirmación para cerrar.
+
+
+## Club Billar Marcothon · Pool v2
+
+- La configuración de **Nueva partida** ahora muestra de forma explícita la pregunta **¿Cómo será el saque?**
+- Se puede elegir directamente entre **Saque alternado** y **Ganador del rack rompe el siguiente**.
+- La selección de **quién rompe primero** se mantiene separada.
+- La ventana de Nueva partida ahora es desplazable para asegurar que todas las opciones sean visibles en tablets con distintas resoluciones.
+- El formato de saque elegido también aparece en la cabecera del partido.
+- No se modificó la lógica restante de Pool v1.
