@@ -28,6 +28,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
+import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -575,6 +576,7 @@ public class MainActivity extends Activity {
         matchView.setText(
                 gameName() +
                 " · Carrera a " + raceTo +
+                " · " + (breakMode == BREAK_ALTERNATE ? "Saque alternado" : "Ganador rompe") +
                 " · Rack " + rackNumber +
                 " · Rompe: " + playerName(breaker)
         );
@@ -1245,9 +1247,13 @@ public class MainActivity extends Activity {
     }
 
     private void showNewGameDialog() {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(20), dp(5), dp(20), 0);
+        box.setPadding(dp(20), dp(5), dp(20), dp(10));
+        scroll.addView(box);
 
         EditText p1 = field(player1, false);
         EditText p2 = field(player2, false);
@@ -1259,27 +1265,27 @@ public class MainActivity extends Activity {
                 gameType == 8 ? 0 : (gameType == 9 ? 1 : 2)
         );
 
-        CheckBox timerOption = new CheckBox(this);
-        timerOption.setText("Usar cronómetro");
-        timerOption.setTextSize(16);
-        timerOption.setChecked(useTimer);
-        timerOption.setPadding(0, dp(6), 0, dp(2));
+        RadioGroup breakGroup = new RadioGroup(this);
+        breakGroup.setOrientation(RadioGroup.VERTICAL);
 
-        time.setEnabled(useTimer);
-        time.setAlpha(useTimer ? 1f : .45f);
+        RadioButton alternateBreak = new RadioButton(this);
+        alternateBreak.setText("Saque alternado");
+        alternateBreak.setTextSize(16);
+        alternateBreak.setId(View.generateViewId());
 
-        timerOption.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            time.setEnabled(isChecked);
-            time.setAlpha(isChecked ? 1f : .45f);
-        });
+        RadioButton winnerBreak = new RadioButton(this);
+        winnerBreak.setText("Ganador del rack rompe el siguiente");
+        winnerBreak.setTextSize(16);
+        winnerBreak.setId(View.generateViewId());
 
-        Spinner breakSpinner = dialogSpinner(
-                new String[]{
-                        "Saque alternado",
-                        "Ganador del rack rompe el siguiente"
-                },
-                breakMode
-        );
+        breakGroup.addView(alternateBreak);
+        breakGroup.addView(winnerBreak);
+
+        if (breakMode == BREAK_WINNER) {
+            winnerBreak.setChecked(true);
+        } else {
+            alternateBreak.setChecked(true);
+        }
 
         RadioGroup breakerGroup = new RadioGroup(this);
         breakerGroup.setOrientation(RadioGroup.HORIZONTAL);
@@ -1306,6 +1312,20 @@ public class MainActivity extends Activity {
             breaker1.setChecked(true);
         }
 
+        CheckBox timerOption = new CheckBox(this);
+        timerOption.setText("Usar cronómetro");
+        timerOption.setTextSize(16);
+        timerOption.setChecked(useTimer);
+        timerOption.setPadding(0, dp(6), 0, dp(2));
+
+        time.setEnabled(useTimer);
+        time.setAlpha(useTimer ? 1f : .45f);
+
+        timerOption.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            time.setEnabled(isChecked);
+            time.setAlpha(isChecked ? 1f : .45f);
+        });
+
         box.addView(dialogLabel("Modalidad"));
         box.addView(gameSpinner);
         box.addView(dialogLabel("Jugador 1"));
@@ -1314,17 +1334,26 @@ public class MainActivity extends Activity {
         box.addView(p2);
         box.addView(dialogLabel("Carrera a racks"));
         box.addView(race);
+
+        TextView breakQuestion = dialogLabel("¿Cómo será el saque?");
+        breakQuestion.setTextSize(15);
+        breakQuestion.setTypeface(Typeface.DEFAULT_BOLD);
+        box.addView(breakQuestion);
+        box.addView(breakGroup);
+
+        TextView firstBreakQuestion = dialogLabel("¿Quién rompe primero?");
+        firstBreakQuestion.setTextSize(15);
+        firstBreakQuestion.setTypeface(Typeface.DEFAULT_BOLD);
+        box.addView(firstBreakQuestion);
+        box.addView(breakerGroup);
+
         box.addView(timerOption);
         box.addView(dialogLabel("Segundos por tiro"));
         box.addView(time);
-        box.addView(dialogLabel("Formato de saque"));
-        box.addView(breakSpinner);
-        box.addView(dialogLabel("¿Quién rompe primero?"));
-        box.addView(breakerGroup);
 
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Nuevo partido de pool")
-                .setView(box)
+                .setView(scroll)
                 .setNegativeButton("Cancelar", null)
                 .setPositiveButton("Preparar", null)
                 .create();
@@ -1356,9 +1385,9 @@ public class MainActivity extends Activity {
                             shotSeconds = Math.max(10, Math.min(120, newTime));
                         }
 
-                        breakMode = breakSpinner.getSelectedItemPosition() == 0
-                                ? BREAK_ALTERNATE
-                                : BREAK_WINNER;
+                        breakMode = winnerBreak.isChecked()
+                                ? BREAK_WINNER
+                                : BREAK_ALTERNATE;
 
                         firstBreaker = breaker2.isChecked() ? 2 : 1;
                         breaker = firstBreaker;
