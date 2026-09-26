@@ -4,7 +4,7 @@
         android:allowBackup="true"
         android:icon="@drawable/marcothon_logo"
         android:roundIcon="@drawable/marcothon_logo"
-        android:label="Club Billar Marcothon Pool v1"
+        android:label="Club Billar Marcothon Pool v2"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
