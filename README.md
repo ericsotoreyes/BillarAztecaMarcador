@@ -305,3 +305,21 @@ imagen y luego el reloj/repetición sobre la mesa real. Compilar no valida el ha
 Validar en el dispositivo: repetición normal; abrir/cancelar la configuración de mesa;
 activar reconocimiento y comprobar si ambas funciones están admitidas; revisar el aviso
 si entra el modo manual y comprobar Reanudar. La compilación no comprueba el hardware.
+
+
+## Marcothon v20 — selección de cámaras realmente disponibles
+
+Corrige el error reportado: inventario con dos cámaras (0 y 1), ambas Lens=1, mientras
+DEFAULT_FRONT_CAMERA exige LensFilter=0 y no puede seleccionar ninguna.
+
+- Selecciona el CameraSelector de una CameraInfo disponible, sin exigir una etiqueta frontal
+  ausente. Prefiere la elección guardada, USB si se solicitó, frontal si existe, o la primera
+  cámara anunciada. No cambia la API de captura ni los controles del marcador.
+- Mantener presionado Repetición abre todas las cámaras anunciadas: Cámara 1, Cámara 2, etc.
+  Se guarda la elección por ID real. Si la etiqueta es ambigua, el usuario puede elegir la
+  que apunta a la mesa. Cambiar cámara invalida la calibración anterior y limpia los clips.
+- Una cámara USB fallida o desconectada permite volver a una cámara interna disponible.
+- El inicio pendiente de CameraX ya no se presenta como un fallo con un texto de inicio.
+- Pruebas de regresión para el inventario exacto de la captura, ambas cámaras con igual
+  etiqueta, selección guardada, cambio de orden, USB ausente/disponible e inventario vacío.
+- APK independiente `com.clubmarcothon.marcador.v20`; versiones anteriores intactas.
