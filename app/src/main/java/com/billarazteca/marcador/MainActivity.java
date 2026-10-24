@@ -776,18 +776,11 @@ public class MainActivity extends ComponentActivity {
         if (button == null) return;
 
         if (!useTimer) {
-            button.setText("Sin reloj");
-            button.setEnabled(false);
-            button.setTextColor(Color.rgb(45, 50, 58));
-            button.setBackground(roundRect(
-                    Color.rgb(205, 209, 214),
-                    Color.argb(30, 0, 0, 0),
-                    1,
-                    10
-            ));
-            button.setAlpha(.65f);
+            button.setVisibility(View.GONE);
             return;
         }
+
+        button.setVisibility(View.VISIBLE);
 
         if (remaining <= 0) {
             button.setText("Sin ext.");
