@@ -155,3 +155,10 @@ Cambios exclusivamente visuales sobre Marcothon v1:
 - En partidas **sin cronómetro**, los indicadores de extensiones de ambos jugadores se ocultan por completo.
 - Ya no aparece el texto **“Sin reloj”**.
 - Si una partida usa cronómetro, los indicadores de extensiones vuelven a mostrarse normalmente.
+
+
+## Marcothon v13
+
+- El reproductor superpuesto ya no aparece automáticamente al iniciar cada nuevo fragmento de repetición.
+- Los controles de video siguen disponibles si el usuario toca el video manualmente.
+- Los botones propios **Anterior**, **Velocidad** y **Siguiente** permanecen siempre visibles.
