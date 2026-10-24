@@ -75,6 +75,7 @@ public class MainActivity extends Activity {
     private Button extension2Button;
 
     private ToneGenerator toneGenerator;
+    private ToneGenerator warningToneGenerator;
 
     private String tableName = "Mesa 1";
     private String player1 = "Jugador 1";
@@ -101,6 +102,7 @@ public class MainActivity extends Activity {
     private boolean matchFinished = false;
     private boolean useTimer = true;
     private long lastTick = 0L;
+    private boolean timeFoulDialogShown = false;
 
     private static final String RECOVERY_PREFS = "billiards_recovery";
     private boolean recoveryActive = false;
@@ -166,6 +168,13 @@ public class MainActivity extends Activity {
             } catch (Throwable ignored) {
             }
             toneGenerator = null;
+        }
+        if (warningToneGenerator != null) {
+            try {
+                warningToneGenerator.release();
+            } catch (Throwable ignored) {
+            }
+            warningToneGenerator = null;
         }
         super.onDestroy();
     }
@@ -842,6 +851,7 @@ public class MainActivity extends Activity {
             paused = false;
             secondsLeft = shotSeconds;
             extensionArmed = false;
+            timeFoulDialogShown = false;
             lastTick = System.currentTimeMillis();
             refresh();
             Toast.makeText(
@@ -864,6 +874,7 @@ public class MainActivity extends Activity {
     private void resetTimerManual() {
         if (!useTimer) return;
         extensionArmed = false;
+        timeFoulDialogShown = false;
         secondsLeft = shotSeconds;
         if (gameStarted && !matchFinished) {
             paused = false;
@@ -876,11 +887,13 @@ public class MainActivity extends Activity {
         if (!useTimer) {
             paused = false;
             extensionArmed = false;
+            timeFoulDialogShown = false;
             refresh();
             return;
         }
         secondsLeft = shotSeconds;
         paused = false;
+        timeFoulDialogShown = false;
         lastTick = System.currentTimeMillis();
         refresh();
     }
@@ -1406,6 +1419,7 @@ public class MainActivity extends Activity {
                         extensions1 = 2;
                         extensions2 = 2;
                         extensionArmed = false;
+                        timeFoulDialogShown = false;
 
                         paused = false;
                         gameStarted = false;
@@ -1502,31 +1516,53 @@ public class MainActivity extends Activity {
             try {
                 long now = System.currentTimeMillis();
 
-                if (useTimer && gameStarted && !matchFinished && !paused && secondsLeft > 0 && lastTick > 0) {
+                if (useTimer &&
+                        gameStarted &&
+                        !matchFinished &&
+                        !paused &&
+                        secondsLeft > 0 &&
+                        lastTick > 0) {
+
                     long elapsed = now - lastTick;
 
                     if (elapsed >= 1000L) {
                         int previousSeconds = secondsLeft;
                         int steps = (int) (elapsed / 1000L);
+
                         secondsLeft = Math.max(0, secondsLeft - steps);
                         lastTick += steps * 1000L;
 
-                        if (previousSeconds > 0 && secondsLeft == 0) {
-                            playTimeExpiredBeep();
+                        for (int second = previousSeconds - 1; second >= secondsLeft; second--) {
+                            if (second <= 10 && second > 0) {
+                                playWarningBeep();
+                            }
+                        }
 
+                        if (previousSeconds > 0 && secondsLeft == 0) {
                             if (extensionArmed) {
                                 secondsLeft = shotSeconds;
                                 extensionArmed = false;
+                                timeFoulDialogShown = false;
                                 lastTick = now;
+
                                 Toast.makeText(
                                         MainActivity.this,
                                         "Extensión: tiempo reiniciado",
                                         Toast.LENGTH_SHORT
                                 ).show();
-                            }
-                        }
+                            } else {
+                                paused = true;
+                                playTimeExpiredBeep();
+                                refresh();
 
-                        refresh();
+                                if (!timeFoulDialogShown) {
+                                    timeFoulDialogShown = true;
+                                    handler.post(MainActivity.this::showTimeFoulDialog);
+                                }
+                            }
+                        } else {
+                            refresh();
+                        }
                     }
                 } else {
                     lastTick = now;
@@ -1538,14 +1574,49 @@ public class MainActivity extends Activity {
         }
     };
 
+    private void playWarningBeep() {
+        try {
+            if (warningToneGenerator == null) {
+                warningToneGenerator = new ToneGenerator(AudioManager.STREAM_ALARM, 65);
+            }
+            warningToneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 90);
+        } catch (Throwable ignored) {
+        }
+    }
+
     private void playTimeExpiredBeep() {
         try {
             if (toneGenerator == null) {
                 toneGenerator = new ToneGenerator(AudioManager.STREAM_ALARM, 100);
             }
-            toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 250);
+            toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP2, 500);
         } catch (Throwable ignored) {
         }
+    }
+
+    private void showTimeFoulDialog() {
+        if (!useTimer || !gameStarted || matchFinished || secondsLeft > 0) {
+            timeFoulDialogShown = false;
+            return;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("Tiempo agotado")
+                .setMessage("El cronómetro llegó a cero. ¿Confirmar falta por tiempo?")
+                .setCancelable(false)
+                .setNegativeButton("Cancelar", (dialog, which) -> {
+                    timeFoulDialogShown = false;
+                    extensionArmed = false;
+                    secondsLeft = shotSeconds;
+                    paused = false;
+                    lastTick = System.currentTimeMillis();
+                    refresh();
+                })
+                .setPositiveButton("Confirmar falta", (dialog, which) -> {
+                    timeFoulDialogShown = false;
+                    finishTurn();
+                })
+                .show();
     }
 
     private void showFallback(Throwable error) {
