@@ -2099,7 +2099,8 @@ public class MainActivity extends ComponentActivity {
                         files,
                         index,
                         playbackSpeed,
-                        activePlayer
+                        activePlayer,
+                        controls
                 );
             } else {
                 Toast.makeText(
@@ -2119,7 +2120,8 @@ public class MainActivity extends ComponentActivity {
                         files,
                         index,
                         playbackSpeed,
-                        activePlayer
+                        activePlayer,
+                        controls
                 );
             } else {
                 Toast.makeText(
@@ -2151,7 +2153,8 @@ public class MainActivity extends ComponentActivity {
                     files,
                     index,
                     playbackSpeed,
-                    activePlayer
+                    activePlayer,
+                    controls
             );
         });
 
@@ -2165,7 +2168,8 @@ public class MainActivity extends ComponentActivity {
             List<File> files,
             int[] index,
             float[] playbackSpeed,
-            android.media.MediaPlayer[] activePlayer
+            android.media.MediaPlayer[] activePlayer,
+            MediaController controls
     ) {
         if (index[0] < 0 || index[0] >= files.size()) return;
 
@@ -2174,6 +2178,11 @@ public class MainActivity extends ComponentActivity {
         status.setText(
                 "Fragmento " + (index[0] + 1) + " de " + files.size()
         );
+
+        try {
+            controls.hide();
+        } catch (Throwable ignored) {
+        }
 
         video.setVideoURI(Uri.fromFile(file));
         video.setOnPreparedListener(mediaPlayer -> {
@@ -2189,6 +2198,18 @@ public class MainActivity extends ComponentActivity {
             }
 
             video.start();
+
+            try {
+                controls.hide();
+            } catch (Throwable ignored) {
+            }
+
+            handler.postDelayed(() -> {
+                try {
+                    controls.hide();
+                } catch (Throwable ignored) {
+                }
+            }, 120L);
         });
 
         video.setOnCompletionListener(mediaPlayer -> {
@@ -2201,7 +2222,8 @@ public class MainActivity extends ComponentActivity {
                         files,
                         index,
                         playbackSpeed,
-                        activePlayer
+                        activePlayer,
+                        controls
                 );
             } else {
                 status.setText("Repetición terminada");
