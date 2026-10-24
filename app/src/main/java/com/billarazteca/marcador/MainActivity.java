@@ -2184,7 +2184,10 @@ public class MainActivity extends ComponentActivity {
         } catch (Throwable ignored) {
         }
 
-        video.setVideoURI(Uri.fromFile(file));
+        // VideoView may show its controller while preparing a new clip.
+        // Reattach only after its internal prepared callback has finished.
+        video.setMediaController(null);
+        activePlayer[0] = null;
         video.setOnPreparedListener(mediaPlayer -> {
             activePlayer[0] = mediaPlayer;
 
@@ -2199,17 +2202,10 @@ public class MainActivity extends ComponentActivity {
 
             video.start();
 
-            try {
-                controls.hide();
-            } catch (Throwable ignored) {
-            }
-
-            handler.postDelayed(() -> {
-                try {
-                    controls.hide();
-                } catch (Throwable ignored) {
-                }
-            }, 120L);
+            video.post(() -> {
+                if (!replayPlaybackOpen || activePlayer[0] != mediaPlayer) return;
+                video.setMediaController(controls);
+            });
         });
 
         video.setOnCompletionListener(mediaPlayer -> {
@@ -2229,6 +2225,7 @@ public class MainActivity extends ComponentActivity {
                 status.setText("Repetición terminada");
             }
         });
+        video.setVideoURI(Uri.fromFile(file));
     }
 
     private void endReplayReview() {
