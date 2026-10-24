@@ -7,11 +7,11 @@ android {
     compileSdk 35
 
     defaultConfig {
-        applicationId 'com.clubmarcothon.marcador.v8'
+        applicationId 'com.clubmarcothon.marcador.v9'
         minSdk 26
         targetSdk 35
-        versionCode 8
-        versionName '1.7.0'
+        versionCode 9
+        versionName '1.8.0'
     }
 
     buildTypes {
