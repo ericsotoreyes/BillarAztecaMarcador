@@ -498,19 +498,32 @@ public class MainActivity extends ComponentActivity {
         LinearLayout buttons = new LinearLayout(this);
         buttons.setOrientation(LinearLayout.HORIZONTAL);
 
-        Button minus = styledButton("−1", RED, Color.WHITE, 24);
-        Button plus = styledButton("+1", YELLOW, Color.BLACK, 24);
+        Button minus = styledButton("−1", RED, Color.WHITE, 22);
+        Button plus = styledButton("+1", YELLOW, Color.BLACK, 22);
+        Button plusThree = styledButton("+3", YELLOW, Color.BLACK, 22);
+        Button plusFive = styledButton("+5", YELLOW, Color.BLACK, 22);
 
-        LinearLayout.LayoutParams leftButton = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
-        leftButton.setMargins(0, dp(4), dp(3), 0);
-
-        LinearLayout.LayoutParams rightButton = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
-        rightButton.setMargins(dp(3), dp(4), 0, 0);
-
-        buttons.addView(minus, leftButton);
-        buttons.addView(plus, rightButton);
+        Button[] scoreButtons = {minus, plus, plusThree, plusFive};
+        for (int i = 0; i < scoreButtons.length; i++) {
+            Button button = scoreButtons[i];
+            button.setMinWidth(0);
+            button.setMinimumWidth(0);
+            button.setSingleLine(true);
+            button.setAutoSizeTextTypeUniformWithConfiguration(12, 22, 1, TypedValue.COMPLEX_UNIT_SP);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
+            params.setMargins(i == 0 ? 0 : dp(2), dp(4), i == 3 ? 0 : dp(2), 0);
+            buttons.addView(button, params);
+        }
+        int player = first ? 1 : 2;
+        minus.setContentDescription("Restar una carambola al jugador " + player);
+        plus.setContentDescription("Sumar una carambola al jugador " + player);
+        plusThree.setContentDescription("Sumar tres carambolas al jugador " + player);
+        plusFive.setContentDescription("Sumar cinco carambolas al jugador " + player);
+        minus.setOnClickListener(v -> subtractPoint(player));
+        plus.setOnClickListener(v -> addPoints(player, 1));
+        plusThree.setOnClickListener(v -> addPoints(player, 3));
+        plusFive.setOnClickListener(v -> addPoints(player, 5));
 
         panel.addView(buttons, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
@@ -522,8 +535,6 @@ public class MainActivity extends ComponentActivity {
             score1View = score;
             avg1View = avg;
             run1View = run;
-            minus.setOnClickListener(v -> subtractPoint(1));
-            plus.setOnClickListener(v -> addPoint(1));
         } else {
             name2View = name;
             active2View = active;
@@ -531,8 +542,6 @@ public class MainActivity extends ComponentActivity {
             score2View = score;
             avg2View = avg;
             run2View = run;
-            minus.setOnClickListener(v -> subtractPoint(2));
-            plus.setOnClickListener(v -> addPoint(2));
         }
 
         return panel;
@@ -868,21 +877,24 @@ public class MainActivity extends ComponentActivity {
         button.setAlpha(.85f);
     }
 
-    private void addPoint(int player) {
+    private void addPoints(int player, int points) {
         if (!gameStarted || matchFinished) {
             Toast.makeText(this, "Primero inicia la partida", Toast.LENGTH_SHORT).show();
             return;
         }
-        if (player != currentPlayer) return;
+        if (player != currentPlayer || points <= 0) return;
+        int currentScore = player == 1 ? score1 : score2;
+        int added = Math.min(points, Math.max(0, target - currentScore));
+        if (added == 0) return;
+        // A bulk addition is one undoable action, with the same turn/timer rules as +1.
         pushState();
+        currentRun += added;
 
         if (player == 1) {
-            score1++;
-            currentRun++;
+            score1 += added;
             maxRun1 = Math.max(maxRun1, currentRun);
         } else {
-            score2++;
-            currentRun++;
+            score2 += added;
             maxRun2 = Math.max(maxRun2, currentRun);
         }
 

@@ -221,3 +221,14 @@ objetos extra, cambio de resolución y rechazo de esquinas inválidas.
 
 Antes de usar en un partido, ensayar tiros rápidos/lentos, cerca de ambas bandas,
 oclusiones, luz/reflejos, los dos jugadores, fin de turno, pausa/repetición y extensiones.
+
+
+## Marcothon v15 — botones para sumar carambolas
+
+- Basada en v14, conserva el reloj automático y las repeticiones.
+- Cada jugador tiene **−1, +1, +3 y +5** en una sola fila, con texto adaptable.
+- Las sumas solo se permiten para el jugador en turno durante una partida activa.
+- Actualizan marcador, promedio y serie mayor. Cada pulsación se revierte con un Deshacer.
+- En modo cámara no reinician el reloj; el cambio de turno sigue siendo manual.
+- Si una suma alcanza la distancia configurada, se limita a esa distancia y finaliza la partida.
+- Aplicación independiente `com.clubmarcothon.marcador.v15`; no modifica versiones anteriores.
