@@ -162,3 +162,62 @@ Cambios exclusivamente visuales sobre Marcothon v1:
 - El reproductor superpuesto ya no aparece automáticamente al iniciar cada nuevo fragmento de repetición.
 - Los controles de video siguen disponibles si el usuario toca el video manualmente.
 - Los botones propios **Anterior**, **Velocidad** y **Siguiente** permanecen siempre visibles.
+
+
+## Marcothon v14 — cronómetro con cámara (prueba en mesa)
+
+Basada en `marcothon-v13`, commit `1e09376cc2f6d2286e3bcd4529f3024f80841478`.
+Aplicación independiente: `com.clubmarcothon.marcador.v14`. No modifica ramas estables.
+
+### Activación
+
+1. En **Nuevo partido**, marca **Usar cronómetro** y **Cronómetro automático con cámara (prueba)**.
+   También puedes abrir **Cámara · reloj** en el panel central de una partida con reloj.
+2. Fija la cámara elevada en un extremo. Deben verse el paño completo y las tres bolas.
+3. Marca las esquinas interiores del paño: lejana izquierda, lejana derecha, cercana derecha,
+   cercana izquierda. La vista no está reflejada.
+4. Comprueba que los tres círculos verdes corresponden a las bolas reales y pulsa **Activar**.
+   No se permite activar si no se distinguen tres bolas durante dos segundos.
+5. Inicia la partida. El reloj espera una lectura estable antes de comenzar.
+
+### Comportamiento
+
+- Una bola se desplaza: el reloj se pausa; no se consumen extensiones durante el movimiento.
+- Tres bolas visibles y quietas durante 2 s tras un tiro observado: tiempo completo para el
+  mismo jugador, sin sumar carambolas ni cambiar turno ni devolver extensiones usadas.
+- Añadir puntos en este modo no reinicia el reloj; se puede registrar la serie al finalizar.
+- **Fin de turno** sigue siendo manual; reinicia el reloj del rival y descarta el tiro anterior.
+- **Pausa/Reanudar**, reinicio manual y Deshacer siguen disponibles. La cámara no anula
+  una pausa manual ni una confirmación de falta. Al reanudar se adquiere una lectura nueva.
+- Si faltan bolas, hay objetos ambiguos, una obstrucción grande o no llegan imágenes en
+  800 ms, se mantiene el tiempo en pausa. Recuperar visión sin haber observado un tiro
+  no otorga tiempo completo. Si el tiro ya estaba en curso, espera 2 s de quietud visible.
+- Repeticiones, cambio de cámara, nuevo partido y segundo plano invalidan lecturas pendientes.
+- Tras reiniciar la app, el control vuelve al modo manual; se debe comprobar y activar la
+  cámara nuevamente. No se reutilizan calibraciones guardadas de otra posición.
+- En **Cámara · reloj → Desactivar** vuelve al control manual conservando el tiempo restante.
+
+### Alcance de esta primera implementación
+
+Detección local por color y forma dentro de un cuadrilátero con corrección de perspectiva.
+Admite roja/blanca/amarilla o roja/dos blancas. No reconoce carambolas ni bandas.
+Una bola demasiado pequeña, poco iluminada, tapada o desenfocada puede impedir la lectura.
+La configuración permite comprobarlo antes de activar. Si se mueve la cámara hay que
+volver a configurarla. No se afirma precisión arbitral: hace falta probar con la mesa real.
+
+Análisis y grabación comparten CameraX. El modo automático solicita calidad SD de grabación
+para favorecer compatibilidad; si el dispositivo no admite ambas funciones simultáneas,
+se conserva la repetición y se informa que se debe usar reloj manual. USB mantiene el
+soporte anterior para cámaras que Android/CameraX expongan como externas; no añade un
+controlador USB/UVC nuevo.
+
+### Verificación
+
+`gradle testDebugUnitTest assembleDebug --stacktrace`
+
+Pruebas de movimiento, quietud, tiro repetido, rodamiento lento, oclusión, pérdida de
+fotogramas, adquisición inicial sin reinicios, dos bolas blancas, segmentación sintética,
+objetos extra, cambio de resolución y rechazo de esquinas inválidas.
+
+Antes de usar en un partido, ensayar tiros rápidos/lentos, cerca de ambas bandas,
+oclusiones, luz/reflejos, los dos jugadores, fin de turno, pausa/repetición y extensiones.

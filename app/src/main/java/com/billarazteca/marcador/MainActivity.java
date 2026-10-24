@@ -6,6 +6,16 @@ import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Canvas;
+import android.os.SystemClock;
+import android.util.Size;
+import java.nio.ByteBuffer;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import androidx.camera.core.ImageAnalysis;
+import androidx.camera.core.ImageProxy;
+import androidx.camera.video.Quality;
+import androidx.camera.video.QualitySelector;
+import androidx.camera.video.FallbackStrategy;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
@@ -102,6 +112,27 @@ public class MainActivity extends ComponentActivity {
     private Button extension1Button;
     private Button extension2Button;
     private Button replayButton;
+    private Button cameraClockButton;
+    private boolean cameraClockEnabled = false;
+    private boolean cameraSetupOpen = false;
+    private boolean cameraSetupRequested = false;
+    private boolean foreground = true;
+    private boolean cameraClockHold = true;
+    private boolean visionObserving = false;
+    private long visionLastFrameAt = 0;
+    private String cameraClockStatus = "Configurar cámara";
+    private ImageAnalysis clockAnalysis;
+    private int cameraGeneration = 0;
+    private final ExecutorService visionExecutor = Executors.newSingleThreadExecutor();
+    private volatile VisionSession visionSession;
+    private TableBallDetector calibratedTable;
+    private TableCalibrationView calibrationView;
+
+    private static final class VisionSession {
+        final TableBallDetector detector;
+        final ShotMotionGate gate = new ShotMotionGate();
+        VisionSession(TableBallDetector detector) { this.detector = detector; }
+    }
 
     private ToneGenerator toneGenerator;
     private ToneGenerator warningToneGenerator;
@@ -191,6 +222,9 @@ public class MainActivity extends ComponentActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        foreground = true;
+        invalidateVision();
+        refresh();
         enableFullscreen();
 
         if (gameStarted && !matchFinished && !replayPlaybackOpen) {
@@ -200,6 +234,13 @@ public class MainActivity extends ComponentActivity {
 
     @Override
     protected void onPause() {
+        foreground = false;
+        invalidateVision();
+        if (cameraSetupOpen) {
+            // A backgrounded calibration cannot be trusted after returning.
+            calibratedTable = null;
+        }
+        refresh();
         stopReplayCapture();
         savePersistentState(true);
         super.onPause();
@@ -244,6 +285,9 @@ public class MainActivity extends ComponentActivity {
             }
             warningToneGenerator = null;
         }
+        cameraGeneration++;
+        if (clockAnalysis != null) clockAnalysis.clearAnalyzer();
+        visionExecutor.shutdownNow();
         super.onDestroy();
     }
 
@@ -572,6 +616,10 @@ public class MainActivity extends ComponentActivity {
         center.addView(activeView, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
+        cameraClockButton = styledButton("Cámara · reloj", LIGHT, Color.rgb(14, 21, 29), 9);
+        cameraClockButton.setOnClickListener(v -> showCameraClockOptions());
+        center.addView(cameraClockButton, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(32)));
         return center;
     }
 
@@ -670,6 +718,17 @@ public class MainActivity extends ComponentActivity {
     private void refresh() {
         if (score1View == null) return;
 
+        boolean observe = cameraClockEnabled && useTimer && gameStarted && !matchFinished
+                && !paused && !replayPlaybackOpen && !cameraSetupOpen && foreground;
+        if (observe != visionObserving) {
+            visionObserving = observe;
+            invalidateVision();
+        }
+        if (cameraClockButton != null) {
+            cameraClockButton.setVisibility(useTimer ? View.VISIBLE : View.GONE);
+            cameraClockButton.setText(cameraClockEnabled ? "Cámara · " + cameraClockStatus : "Cámara · reloj");
+            cameraClockButton.setTextColor(cameraClockEnabled && cameraClockHold ? ORANGE : LIGHT);
+        }
         tableView.setText(tableName);
         matchView.setText("Partido a " + target);
 
@@ -761,7 +820,7 @@ public class MainActivity extends ComponentActivity {
             timerView.setTimer(
                     secondsLeft,
                     shotSeconds,
-                    paused,
+                    paused || (cameraClockEnabled && cameraClockHold),
                     extensionArmed,
                     gameStarted,
                     matchFinished,
@@ -838,7 +897,8 @@ public class MainActivity extends ComponentActivity {
             return;
         }
 
-        resetTimerInternal();
+        if (cameraClockEnabled && useTimer) refresh();
+        else resetTimerInternal();
     }
 
     private void subtractPoint(int player) {
@@ -871,6 +931,7 @@ public class MainActivity extends ComponentActivity {
 
         currentRun = 0;
         extensionArmed = false;
+        invalidateVision();
 
         if (currentPlayer == 1) {
             currentPlayer = 2;
@@ -932,6 +993,7 @@ public class MainActivity extends ComponentActivity {
 
     private void resetTimerManual() {
         if (!useTimer) return;
+        invalidateVision();
         extensionArmed = false;
         timeFoulDialogShown = false;
         secondsLeft = shotSeconds;
@@ -1411,12 +1473,18 @@ public class MainActivity extends ComponentActivity {
         timerOption.setChecked(false);
         timerOption.setPadding(0, dp(8), 0, dp(4));
 
+        CheckBox cameraOption = new CheckBox(this);
+        cameraOption.setText("Cronómetro automático con cámara (prueba)");
+        cameraOption.setTextSize(14);
+        cameraOption.setEnabled(false);
         time.setEnabled(false);
         time.setAlpha(.45f);
 
         timerOption.setOnCheckedChangeListener((buttonView, isChecked) -> {
             time.setEnabled(isChecked);
             time.setAlpha(isChecked ? 1f : .45f);
+            cameraOption.setEnabled(isChecked);
+            if (!isChecked) cameraOption.setChecked(false);
         });
 
         box.addView(dialogLabel("Jugador 1"));
@@ -1428,6 +1496,7 @@ public class MainActivity extends ComponentActivity {
         box.addView(timerOption);
         box.addView(dialogLabel("Segundos por tiro"));
         box.addView(time);
+        box.addView(cameraOption);
 
         final boolean[] prepared = {false};
 
@@ -1462,6 +1531,9 @@ public class MainActivity extends ComponentActivity {
 
                         target = Math.max(1, Math.min(999, newTarget));
                         useTimer = newUseTimer;
+                        cameraClockEnabled = false;
+                        calibratedTable = null;
+                        invalidateVision();
 
                         if (newUseTimer) {
                             shotSeconds = Math.max(5, Math.min(300, newTime));
@@ -1498,6 +1570,9 @@ public class MainActivity extends ComponentActivity {
                         prepared[0] = true;
                         refresh();
                         dialog.dismiss();
+                        if (newUseTimer && cameraOption.isChecked()) {
+                            handler.post(this::requestCameraClockSetup);
+                        }
                     } catch (Throwable ignored) {
                         Toast.makeText(
                                 this,
@@ -1546,6 +1621,7 @@ public class MainActivity extends ComponentActivity {
     }
 
     private void undo() {
+        invalidateVision();
         if (history.isEmpty()) return;
 
         State s = history.pop();
@@ -1579,6 +1655,165 @@ public class MainActivity extends ComponentActivity {
                 PackageManager.PERMISSION_GRANTED;
     }
 
+    private void invalidateVision() {
+        cameraClockHold = true;
+        visionLastFrameAt = 0;
+        cameraClockStatus = calibratedTable == null ? "Configurar mesa" : "Verificando bolas";
+        visionSession = visionObserving && calibratedTable != null ? new VisionSession(calibratedTable) : null;
+    }
+
+    private void showCameraClockOptions() {
+        if (!useTimer || cameraSetupOpen || replayPlaybackOpen) return;
+        new AlertDialog.Builder(this)
+                .setTitle("Cronómetro con cámara · prueba")
+                .setMessage("La cámara pausa el reloj cuando las bolas se mueven y lo reinicia tras 2 segundos quietas. " +
+                        "Debe ver las tres bolas y toda la mesa desde una posición fija y elevada. " +
+                        "Las carambolas y Fin de turno siguen siendo manuales.\n\n" +
+                        "Primero marca el paño de la mesa y comprueba los tres círculos de detección. " +
+                        "Si falta visión, el reloj queda en pausa. Usa Desactivar para volver al reloj manual.")
+                .setPositiveButton("Configurar y activar", (d, w) -> requestCameraClockSetup())
+                .setNeutralButton("Desactivar", (d, w) -> {
+                    cameraClockEnabled = false;
+                    invalidateVision();
+                    lastTick = System.currentTimeMillis();
+                    refresh();
+                })
+                .setNegativeButton("Cerrar", null).show();
+    }
+
+    private void requestCameraClockSetup() {
+        if (!useTimer || cameraSetupOpen || !foreground || isFinishing()) return;
+        cameraSetupRequested = true;
+        if (!hasCameraPermission()) { requestReplayCameraPermission(); return; }
+        if (replayCameraProvider == null) { initializeReplayCameraProvider(); return; }
+        cameraSetupRequested = false;
+        final boolean wasPaused = paused;
+        paused = true;
+        cameraSetupOpen = true;
+        cameraClockEnabled = false;
+        calibratedTable = null;
+        refresh();
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(6), dp(2), dp(6), dp(2));
+        TextView instructions = text("Esperando imagen de la cámara…", 11, Color.DKGRAY, false);
+        instructions.setGravity(Gravity.CENTER);
+        box.addView(instructions);
+        final TableCalibrationView[] view = new TableCalibrationView[1];
+        view[0] = new TableCalibrationView(this, () -> instructions.setText(view[0].status()));
+        calibrationView = view[0];
+        int height = Math.max(dp(140), Math.min(dp(340), getResources().getDisplayMetrics().heightPixels - dp(180)));
+        box.addView(view[0], new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, height));
+        final boolean[] activated = {false};
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Marca las cuatro esquinas interiores del paño")
+                .setView(box)
+                .setNegativeButton("Cancelar", null)
+                .setNeutralButton("Volver a marcar", null)
+                .setPositiveButton("Activar", null).create();
+        dialog.setOnShowListener(d -> {
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> view[0].reset());
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                TableBallDetector table = view[0].calibration(SystemClock.elapsedRealtime());
+                if (table == null || clockAnalysis == null) {
+                    Toast.makeText(this, "Deben verse las tres bolas durante 2 segundos. Comprueba que los círculos corresponden a las bolas.", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                calibratedTable = table;
+                cameraClockEnabled = true;
+                activated[0] = true;
+                dialog.dismiss();
+            });
+        });
+        dialog.setOnDismissListener(d -> {
+            cameraSetupOpen = false;
+            calibrationView = null;
+            view[0].release();
+            if (!activated[0]) calibratedTable = null;
+            // Calibration is a setup pause; it must not silently resume a user's pause.
+            paused = wasPaused;
+            lastTick = System.currentTimeMillis();
+            invalidateVision();
+            refresh();
+            if (foreground && gameStarted && !matchFinished) startReplayCaptureIfReady();
+        });
+        dialog.show();
+        rebindAfterRecording();
+    }
+
+    private boolean rebindPending = false;
+    private void rebindAfterRecording() {
+        if (replayRecording != null) {
+            rebindPending = true;
+            stopReplayCapture();
+        } else {
+            bindReplayCamera();
+        }
+    }
+
+    private void analyzeClockFrame(ImageProxy image, int generation) {
+        try {
+            long now = SystemClock.elapsedRealtime();
+            // Throttle to 15 fps without blocking CameraX or the UI thread.
+            if (now - lastAnalyzedFrame < 65) return;
+            lastAnalyzedFrame = now;
+            ImageProxy.PlaneProxy plane = image.getPlanes()[0];
+            ByteBuffer buffer = plane.getBuffer();
+            int sourceWidth = image.getWidth(), sourceHeight = image.getHeight();
+            int sample = Math.max(1, (int)Math.ceil(Math.max(sourceWidth,sourceHeight)/640.0));
+            int w = sourceWidth/sample, h = sourceHeight/sample;
+            int rotation = image.getImageInfo().getRotationDegrees();
+            int outputWidth = rotation==90 || rotation==270 ? h : w;
+            int outputHeight = rotation==90 || rotation==270 ? w : h;
+            int[] pixels = new int[outputWidth*outputHeight];
+            int base=buffer.position();
+            for(int y=0;y<h;y++) for(int x=0;x<w;x++) {
+                int offset=base+y*sample*plane.getRowStride()+x*sample*plane.getPixelStride();
+                int r=buffer.get(offset)&255, g=buffer.get(offset+1)&255, b=buffer.get(offset+2)&255;
+                int ox=x,oy=y;
+                if(rotation==90){ox=h-1-y;oy=x;}
+                else if(rotation==180){ox=w-1-x;oy=h-1-y;}
+                else if(rotation==270){ox=y;oy=w-1-x;}
+                pixels[oy*outputWidth+ox]=0xff000000|(r<<16)|(g<<8)|b;
+            }
+            VisionSession session = visionSession;
+            ShotMotionGate.Result result = session == null ? null :
+                    session.gate.update(session.detector.detect(pixels,outputWidth,outputHeight),now);
+            handler.post(() -> {
+                if (generation != cameraGeneration || !foreground || isFinishing()) return;
+                if (calibrationView != null) calibrationView.frame(pixels,outputWidth,outputHeight,now);
+                if (session == null || session != visionSession || !visionObserving || result == null) return;
+                // Do not apply results that waited in the UI queue: freshness is a condition for running.
+                if (SystemClock.elapsedRealtime()-now > ShotMotionGate.MAX_GAP_MS) return;
+                boolean wasHeld = cameraClockHold;
+                visionLastFrameAt = now;
+                cameraClockHold = result.holdClock();
+                String previous = cameraClockStatus;
+                switch(result.state) {
+                    case READY: cameraClockStatus="Lista"; break;
+                    case MOVING: cameraClockStatus="Bolas en juego"; break;
+                    case LOST: cameraClockStatus="Sin visión · pausa"; break;
+                    default: cameraClockStatus="Verificando bolas";
+                }
+                if (result.resetClock && !paused && !timeFoulDialogShown && secondsLeft > 0) {
+                    // No score/turn/extension mutation: the same player gets a fresh shot.
+                    secondsLeft = shotSeconds;
+                    extensionArmed = false;
+                    lastTick = System.currentTimeMillis();
+                } else if (wasHeld || cameraClockHold) {
+                    lastTick = System.currentTimeMillis();
+                }
+                if (wasHeld != cameraClockHold || !previous.equals(cameraClockStatus) || result.resetClock) refresh();
+            });
+        } catch (RuntimeException error) {
+            // The watchdog pauses the clock if no valid analysis result arrives.
+        } finally {
+            image.close();
+        }
+    }
+    private long lastAnalyzedFrame = 0;
+
+
     private void requestReplayCameraPermission() {
         if (cameraPermissionRequestInFlight) return;
 
@@ -1611,8 +1846,10 @@ public class MainActivity extends ComponentActivity {
                     "Cámara habilitada para repetición instantánea",
                     Toast.LENGTH_SHORT
             ).show();
-            startReplayCaptureIfReady();
+            if (cameraSetupRequested) requestCameraClockSetup();
+            else startReplayCaptureIfReady();
         } else {
+            cameraSetupRequested = false;
             Toast.makeText(
                     this,
                     "La repetición necesita permiso para usar la cámara",
@@ -1659,7 +1896,9 @@ public class MainActivity extends ComponentActivity {
             try {
                 replayCameraProvider = future.get();
                 bindReplayCamera();
+                if (cameraSetupRequested) requestCameraClockSetup();
             } catch (Throwable error) {
+                cameraSetupRequested = false;
                 replayCaptureDesired = false;
                 Toast.makeText(
                         MainActivity.this,
@@ -1709,16 +1948,43 @@ public class MainActivity extends ComponentActivity {
 
         try {
             replayCameraProvider.unbindAll();
-
-            Recorder recorder = new Recorder.Builder().build();
+            if (clockAnalysis != null) clockAnalysis.clearAnalyzer();
+            clockAnalysis = null;
+            int generation = ++cameraGeneration;
+            invalidateVision();
+            Recorder.Builder recorderBuilder = new Recorder.Builder();
+            if (cameraClockEnabled || cameraSetupOpen) {
+                recorderBuilder.setQualitySelector(QualitySelector.from(Quality.SD,
+                        FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)));
+            }
+            Recorder recorder = recorderBuilder.build();
             replayVideoCapture = VideoCapture.withOutput(recorder);
 
             CameraSelector selector = selectedReplayCameraSelector();
-            replayCameraProvider.bindToLifecycle(
-                    this,
-                    selector,
-                    replayVideoCapture
-            );
+            if (cameraClockEnabled || cameraSetupOpen) {
+                clockAnalysis = new ImageAnalysis.Builder()
+                        .setTargetResolution(new Size(640, 480))
+                        .setTargetRotation(getWindowManager().getDefaultDisplay().getRotation())
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+                        .build();
+                clockAnalysis.setAnalyzer(visionExecutor, image -> analyzeClockFrame(image, generation));
+                try {
+                    replayCameraProvider.bindToLifecycle(this, selector, replayVideoCapture, clockAnalysis);
+                } catch (IllegalArgumentException unsupported) {
+                    clockAnalysis.clearAnalyzer();
+                    clockAnalysis = null;
+                    cameraClockEnabled = false;
+                    calibratedTable = null;
+                    if (gameStarted && useTimer) paused = true;
+                    Toast.makeText(this, "Esta cámara no admite repetición y reloj automático a la vez. Se conserva el modo manual.", Toast.LENGTH_LONG).show();
+                    replayCameraProvider.unbindAll();
+                    replayCameraProvider.bindToLifecycle(this, selector, replayVideoCapture);
+                    refresh();
+                }
+            } else {
+                replayCameraProvider.bindToLifecycle(this, selector, replayVideoCapture);
+            }
 
             if (replayCaptureDesired && !replayPlaybackOpen) {
                 startReplaySegment();
@@ -1727,6 +1993,9 @@ public class MainActivity extends ComponentActivity {
             if (replayCameraSource == CAMERA_SOURCE_EXTERNAL) {
                 replayCameraSource = CAMERA_SOURCE_FRONT;
                 saveReplayCameraSource();
+                calibratedTable = null;
+                cameraClockEnabled = false;
+                invalidateVision();
                 replayVideoCapture = null;
 
                 Toast.makeText(
@@ -1799,6 +2068,15 @@ public class MainActivity extends ComponentActivity {
                                         segmentFile.delete();
                                     } catch (Throwable ignored) {
                                     }
+                                }
+
+                                if (rebindPending) {
+                                    rebindPending = false;
+                                    if (foreground) {
+                                        bindReplayCamera();
+                                        if (gameStarted && !matchFinished && !cameraSetupOpen) startReplayCaptureIfReady();
+                                    }
+                                    return;
                                 }
 
                                 if (replayOptionsPending) {
@@ -2298,6 +2576,9 @@ public class MainActivity extends ComponentActivity {
                                             : CAMERA_SOURCE_FRONT;
 
                             saveReplayCameraSource();
+                            calibratedTable = null;
+                            cameraClockEnabled = false;
+                            invalidateVision();
                             stopReplayCapture();
                             clearReplayBuffer();
 
@@ -2333,11 +2614,19 @@ public class MainActivity extends ComponentActivity {
         public void run() {
             try {
                 long now = System.currentTimeMillis();
+                if (cameraClockEnabled && visionObserving && !cameraClockHold &&
+                        (visionLastFrameAt == 0 || SystemClock.elapsedRealtime() - visionLastFrameAt > ShotMotionGate.MAX_GAP_MS)) {
+                    invalidateVision();
+                    cameraClockStatus = "Sin imagen · pausa";
+                    refresh();
+                }
 
                 if (useTimer &&
                         gameStarted &&
                         !matchFinished &&
                         !paused &&
+                        (!cameraClockEnabled || !cameraClockHold) &&
+                        foreground &&
                         secondsLeft > 0 &&
                         lastTick > 0) {
 

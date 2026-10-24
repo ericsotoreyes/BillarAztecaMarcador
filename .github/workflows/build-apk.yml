@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - marcothon-v13
+      - marcothon-v14
 
 jobs:
   build:
@@ -27,10 +27,10 @@ jobs:
           gradle-version: "8.9"
 
       - name: Build APK
-        run: gradle assembleDebug --stacktrace
+        run: gradle testDebugUnitTest assembleDebug --stacktrace
 
       - name: Save APK
         uses: actions/upload-artifact@v4
         with:
-          name: ClubBillarMarcothon-Marcador-v13
+          name: ClubBillarMarcothon-Marcador-v14
           path: app/build/outputs/apk/debug/app-debug.apk
