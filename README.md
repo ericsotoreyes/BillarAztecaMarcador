@@ -129,3 +129,12 @@ Cambios exclusivamente visuales sobre Marcothon v1:
 - La ventana de **Repetición instantánea** incorpora un botón de velocidad.
 - El botón alterna entre **1×** y **0.5×**.
 - La velocidad elegida se conserva al pasar al fragmento anterior o siguiente y durante el avance automático entre fragmentos.
+
+
+## Marcothon v10
+
+- Corrige la visibilidad de los controles de repetición en modo horizontal.
+- Se añade una fila fija sobre el video con **Anterior**, **Velocidad 1×/0.5×** y **Siguiente**.
+- La altura del video se adapta a la pantalla para evitar que los controles queden fuera de la ventana.
+- Anterior y Siguiente cambian realmente entre fragmentos temporales.
+- La velocidad elegida se conserva al cambiar entre fragmentos.
