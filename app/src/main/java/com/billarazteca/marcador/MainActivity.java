@@ -1996,9 +1996,9 @@ public class MainActivity extends ComponentActivity {
 
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(10), dp(8), dp(10), dp(4));
+        box.setPadding(dp(6), dp(3), dp(6), dp(2));
 
-        TextView status = text("", 13, Color.DKGRAY, true);
+        TextView status = text("", 11, Color.DKGRAY, true);
         status.setGravity(Gravity.CENTER);
 
         final int[] index = {0};
@@ -2008,27 +2008,27 @@ public class MainActivity extends ComponentActivity {
         LinearLayout replayControls = new LinearLayout(this);
         replayControls.setOrientation(LinearLayout.HORIZONTAL);
         replayControls.setGravity(Gravity.CENTER);
-        replayControls.setPadding(0, dp(4), 0, dp(4));
+        replayControls.setPadding(0, dp(2), 0, dp(2));
 
         Button previousButton = styledButton(
                 "⏮ Anterior",
                 LIGHT,
                 Color.rgb(14, 21, 29),
-                13
+                10
         );
 
         Button speedButton = styledButton(
                 "Velocidad 1×",
                 YELLOW,
                 Color.BLACK,
-                13
+                10
         );
 
         Button nextButton = styledButton(
                 "Siguiente ⏭",
                 LIGHT,
                 Color.rgb(14, 21, 29),
-                13
+                10
         );
 
         replayControls.addView(previousButton, actionParams(1f));
@@ -2042,18 +2042,18 @@ public class MainActivity extends ComponentActivity {
 
         box.addView(status, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(28)
+                dp(20)
         ));
 
         box.addView(replayControls, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(48)
+                dp(36)
         ));
 
         int screenHeight = getResources().getDisplayMetrics().heightPixels;
         int replayVideoHeight = Math.max(
-                dp(150),
-                Math.min(dp(235), screenHeight - dp(205))
+                dp(180),
+                Math.min(dp(320), screenHeight - dp(155))
         );
 
         box.addView(video, new LinearLayout.LayoutParams(
@@ -2063,11 +2063,11 @@ public class MainActivity extends ComponentActivity {
 
         TextView note = text(
                 "Anterior/Siguiente cambian de fragmento. La velocidad se conserva al cambiar de clip.",
-                11,
+                9,
                 Color.DKGRAY,
                 false
         );
-        note.setPadding(dp(6), dp(3), dp(6), 0);
+        note.setPadding(dp(4), dp(1), dp(4), 0);
         note.setGravity(Gravity.CENTER);
         box.addView(note);
 
@@ -2143,15 +2143,24 @@ public class MainActivity extends ComponentActivity {
                 .setPositiveButton("Volver al marcador", null)
                 .create();
 
-        dialog.setOnShowListener(v ->
-                playReplayFile(
-                        video,
-                        status,
-                        files,
-                        index,
-                        playbackSpeed,
-                        activePlayer
-                ));
+        dialog.setOnShowListener(v -> {
+            Button backButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            if (backButton != null) {
+                backButton.setTextSize(11);
+                backButton.setMinHeight(0);
+                backButton.setMinimumHeight(0);
+                backButton.setPadding(dp(10), dp(2), dp(10), dp(2));
+            }
+
+            playReplayFile(
+                    video,
+                    status,
+                    files,
+                    index,
+                    playbackSpeed,
+                    activePlayer
+            );
+        });
 
         dialog.setOnDismissListener(v -> endReplayReview());
         dialog.show();
