@@ -8,7 +8,8 @@ import android.content.pm.PackageManager;
 import android.graphics.Canvas;
 import android.os.SystemClock;
 import android.util.Size;
-import java.nio.ByteBuffer;
+import android.graphics.Bitmap;
+import android.graphics.Matrix;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import androidx.camera.core.ImageAnalysis;
@@ -130,6 +131,10 @@ public class MainActivity extends ComponentActivity {
     private volatile VisionSession visionSession;
     private TableBallDetector calibratedTable;
     private TableCalibrationView calibrationView;
+    private TextView calibrationStatusView;
+    private AlertDialog calibrationDialog;
+    private long calibrationFrameAt = 0;
+    private long lastAnalysisProblemAt = 0;
 
     private static final class VisionSession {
         final TableBallDetector detector;
@@ -305,6 +310,7 @@ public class MainActivity extends ComponentActivity {
         visionExecutor.shutdownNow();
         handler.removeCallbacks(replayStartTimeout);
         handler.removeCallbacks(recoverReplayRunnable);
+        handler.removeCallbacks(calibrationFrameTimeout);
         // Finish any already queued MP4 checks; their callbacks discard files after destruction.
         replayFileExecutor.shutdown();
         super.onDestroy();
@@ -1778,6 +1784,8 @@ public class MainActivity extends ComponentActivity {
         final TableCalibrationView[] view = new TableCalibrationView[1];
         view[0] = new TableCalibrationView(this, () -> instructions.setText(view[0].status()));
         calibrationView = view[0];
+        calibrationStatusView = instructions;
+        calibrationFrameAt = 0;
         int height = Math.max(dp(140), Math.min(dp(340), getResources().getDisplayMetrics().heightPixels - dp(180)));
         box.addView(view[0], new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, height));
         final boolean[] activated = {false};
@@ -1785,10 +1793,25 @@ public class MainActivity extends ComponentActivity {
                 .setTitle("Marca las cuatro esquinas interiores del paño")
                 .setView(box)
                 .setNegativeButton("Cancelar", null)
-                .setNeutralButton("Volver a marcar", null)
+                .setNeutralButton("Reintentar cámara", null)
                 .setPositiveButton("Activar", null).create();
+        calibrationDialog = dialog;
         dialog.setOnShowListener(d -> {
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> view[0].reset());
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
+                if (!view[0].hasFrame() || SystemClock.elapsedRealtime() - calibrationFrameAt > 2000L) {
+                    view[0].reset();
+                    calibrationFrameAt = 0;
+                    instructions.setText("Reiniciando la cámara…");
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+                    rebindAfterRecording();
+                    handler.removeCallbacks(calibrationFrameTimeout);
+                    handler.postDelayed(calibrationFrameTimeout, 6000L);
+                } else {
+                    view[0].reset();
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+                }
+            });
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
                 TableBallDetector table = view[0].calibration(SystemClock.elapsedRealtime());
                 if (table == null || clockAnalysis == null) {
@@ -1803,7 +1826,10 @@ public class MainActivity extends ComponentActivity {
         });
         dialog.setOnDismissListener(d -> {
             cameraSetupOpen = false;
+            handler.removeCallbacks(calibrationFrameTimeout);
             calibrationView = null;
+            calibrationStatusView = null;
+            calibrationDialog = null;
             view[0].release();
             if (!activated[0]) calibratedTable = null;
             // Calibration is a setup pause; it must not silently resume a user's pause.
@@ -1815,7 +1841,20 @@ public class MainActivity extends ComponentActivity {
         });
         dialog.show();
         rebindAfterRecording();
+        handler.removeCallbacks(calibrationFrameTimeout);
+        handler.postDelayed(calibrationFrameTimeout, 6000L);
     }
+
+    private final Runnable calibrationFrameTimeout = () -> {
+        if (cameraSetupOpen && calibrationStatusView != null &&
+                (calibrationFrameAt == 0 || SystemClock.elapsedRealtime() - calibrationFrameAt > 4000L)) {
+            calibrationStatusView.setText("No se recibió imagen. Pulsa Reintentar cámara. Si continúa, envía una foto de este aviso.");
+            if (calibrationDialog != null) {
+                calibrationDialog.getButton(AlertDialog.BUTTON_NEUTRAL).setText("Reintentar cámara");
+                calibrationDialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+            }
+        }
+    };
 
     private boolean rebindPending = false;
     private void rebindAfterRecording() {
@@ -1828,37 +1867,45 @@ public class MainActivity extends ComponentActivity {
     }
 
     private void analyzeClockFrame(ImageProxy image, int generation) {
+        Bitmap source = null, scaled = null, upright = null;
         try {
             if (visionSession == null && !cameraSetupOpen) return;
             long now = SystemClock.elapsedRealtime();
             // Throttle to 15 fps without blocking CameraX or the UI thread.
             if (now - lastAnalyzedFrame < 65) return;
             lastAnalyzedFrame = now;
-            ImageProxy.PlaneProxy plane = image.getPlanes()[0];
-            ByteBuffer buffer = plane.getBuffer();
-            int sourceWidth = image.getWidth(), sourceHeight = image.getHeight();
-            int sample = Math.max(1, (int)Math.ceil(Math.max(sourceWidth,sourceHeight)/640.0));
-            int w = sourceWidth/sample, h = sourceHeight/sample;
+            source = image.toBitmap();
+            int sourceWidth = source.getWidth(), sourceHeight = source.getHeight();
+            double scale = Math.min(1.0, 640.0 / Math.max(sourceWidth, sourceHeight));
+            int w = Math.max(1, (int)Math.round(sourceWidth * scale));
+            int h = Math.max(1, (int)Math.round(sourceHeight * scale));
+            scaled = Bitmap.createScaledBitmap(source, w, h, false);
             int rotation = image.getImageInfo().getRotationDegrees();
-            int outputWidth = rotation==90 || rotation==270 ? h : w;
-            int outputHeight = rotation==90 || rotation==270 ? w : h;
-            int[] pixels = new int[outputWidth*outputHeight];
-            int base=buffer.position();
-            for(int y=0;y<h;y++) for(int x=0;x<w;x++) {
-                int offset=base+y*sample*plane.getRowStride()+x*sample*plane.getPixelStride();
-                int r=buffer.get(offset)&255, g=buffer.get(offset+1)&255, b=buffer.get(offset+2)&255;
-                int ox=x,oy=y;
-                if(rotation==90){ox=h-1-y;oy=x;}
-                else if(rotation==180){ox=w-1-x;oy=h-1-y;}
-                else if(rotation==270){ox=y;oy=w-1-x;}
-                pixels[oy*outputWidth+ox]=0xff000000|(r<<16)|(g<<8)|b;
+            if (rotation == 0) {
+                upright = scaled;
+            } else {
+                Matrix matrix = new Matrix();
+                matrix.postRotate(rotation);
+                upright = Bitmap.createBitmap(scaled, 0, 0, w, h, matrix, false);
             }
+            int outputWidth = upright.getWidth(), outputHeight = upright.getHeight();
+            int[] pixels = new int[outputWidth * outputHeight];
+            upright.getPixels(pixels, 0, outputWidth, 0, 0, outputWidth, outputHeight);
             VisionSession session = visionSession;
             ShotMotionGate.Result result = session == null ? null :
                     session.gate.update(session.detector.detect(pixels,outputWidth,outputHeight),now);
             handler.post(() -> {
                 if (generation != cameraGeneration || !foreground || isFinishing()) return;
-                if (calibrationView != null) calibrationView.frame(pixels,outputWidth,outputHeight,now);
+                if (calibrationView != null) {
+                    calibrationFrameAt = now;
+                    handler.removeCallbacks(calibrationFrameTimeout);
+                    calibrationView.frame(pixels, outputWidth, outputHeight, now);
+                    if (calibrationDialog != null) {
+                        calibrationDialog.getButton(AlertDialog.BUTTON_NEUTRAL).setText("Volver a marcar");
+                        calibrationDialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                                .setEnabled(calibrationView.canActivate(now));
+                    }
+                }
                 if (session == null || session != visionSession || !visionObserving || result == null) return;
                 // Do not apply results that waited in the UI queue: freshness is a condition for running.
                 if (SystemClock.elapsedRealtime()-now > ShotMotionGate.MAX_GAP_MS) return;
@@ -1883,8 +1930,28 @@ public class MainActivity extends ComponentActivity {
                 if (wasHeld != cameraClockHold || !previous.equals(cameraClockStatus) || result.resetClock) refresh();
             });
         } catch (RuntimeException error) {
-            // The watchdog pauses the clock if no valid analysis result arrives.
+            // Preserve the hold on the clock, and expose conversion failures instead of
+            // leaving the configuration screen silently black forever.
+            long now = SystemClock.elapsedRealtime();
+            if (now - lastAnalysisProblemAt > 2000L) {
+                lastAnalysisProblemAt = now;
+                android.util.Log.w("MarcothonCamera", "Unable to read analysis image", error);
+                handler.post(() -> {
+                    if (generation != cameraGeneration || !foreground) return;
+                    if (calibrationStatusView != null) {
+                        calibrationStatusView.setText("No se pudo leer la imagen (" +
+                                error.getClass().getSimpleName() + "). Pulsa Reintentar cámara.");
+                        if (calibrationDialog != null) {
+                            calibrationDialog.getButton(AlertDialog.BUTTON_NEUTRAL).setText("Reintentar cámara");
+                            calibrationDialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+                        }
+                    }
+                });
+            }
         } finally {
+            if (upright != null && upright != scaled && upright != source) upright.recycle();
+            if (scaled != null && scaled != source) scaled.recycle();
+            if (source != null) source.recycle();
             image.close();
         }
     }
@@ -2021,6 +2088,17 @@ public class MainActivity extends ComponentActivity {
         return false;
     }
 
+    private ImageAnalysis createClockAnalysis(int generation) {
+        ImageAnalysis analysis = new ImageAnalysis.Builder()
+                .setTargetResolution(new Size(640, 480))
+                .setTargetRotation(getWindowManager().getDefaultDisplay().getRotation())
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                .build();
+        analysis.setAnalyzer(visionExecutor, image -> analyzeClockFrame(image, generation));
+        return analysis;
+    }
+
     private void bindReplayCamera() {
         if (replayCameraProvider == null || !hasCameraPermission()) return;
 
@@ -2030,6 +2108,20 @@ public class MainActivity extends ComponentActivity {
             clockAnalysis = null;
             int generation = ++cameraGeneration;
             invalidateVision();
+            CameraSelector selector = selectedReplayCameraSelector();
+            // Calibration needs live analysis only. An idle VideoCapture can leave some
+            // devices waiting on its encoder surface, with no frames for the preview.
+            // Recreate the recorder after leaving setup, preserving the replay buffer.
+            if (cameraSetupOpen) {
+                replayVideoCapture = null;
+                calibrationFrameAt = 0;
+                lastAnalyzedFrame = 0;
+                clockAnalysis = createClockAnalysis(generation);
+                replayCameraProvider.bindToLifecycle(this, selector, clockAnalysis);
+                handler.removeCallbacks(calibrationFrameTimeout);
+                handler.postDelayed(calibrationFrameTimeout, 6000L);
+                return;
+            }
             Recorder.Builder recorderBuilder = new Recorder.Builder();
             if (cameraClockEnabled || cameraSetupOpen || replayFailures > 0) {
                 recorderBuilder.setQualitySelector(QualitySelector.from(Quality.SD,
@@ -2038,15 +2130,8 @@ public class MainActivity extends ComponentActivity {
             Recorder recorder = recorderBuilder.build();
             replayVideoCapture = VideoCapture.withOutput(recorder);
 
-            CameraSelector selector = selectedReplayCameraSelector();
-            if (cameraClockEnabled || cameraSetupOpen) {
-                clockAnalysis = new ImageAnalysis.Builder()
-                        .setTargetResolution(new Size(640, 480))
-                        .setTargetRotation(getWindowManager().getDefaultDisplay().getRotation())
-                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
-                        .build();
-                clockAnalysis.setAnalyzer(visionExecutor, image -> analyzeClockFrame(image, generation));
+            if (cameraClockEnabled) {
+                clockAnalysis = createClockAnalysis(generation);
                 try {
                     replayCameraProvider.bindToLifecycle(this, selector, replayVideoCapture, clockAnalysis);
                 } catch (IllegalArgumentException unsupported) {
@@ -2086,10 +2171,15 @@ public class MainActivity extends ComponentActivity {
             } else {
                 replayCaptureDesired = false;
                 replayVideoCapture = null;
+                if (cameraSetupOpen && calibrationStatusView != null) {
+                    handler.removeCallbacks(calibrationFrameTimeout);
+                    calibrationStatusView.setText("No se pudo abrir la cámara para marcar la mesa (" +
+                            error.getClass().getSimpleName() + "). Pulsa Reintentar cámara.");
+                }
 
                 Toast.makeText(
                         this,
-                        "No se encontró una cámara frontal compatible",
+                        "No se pudo abrir la cámara seleccionada",
                         Toast.LENGTH_LONG
                 ).show();
             }

@@ -267,3 +267,22 @@ Comprobar en dispositivo: iniciar partida, mantener abierta 10–15 s, abrir Rep
 con y sin reloj automático, durante el primer segundo, al cambiar de partido y tras volver
 al primer plano. Las pruebas de JVM cubren la disponibilidad durante inicio/finalización;
 la compatibilidad real de cámara/codificador requiere el dispositivo.
+
+
+## Marcothon v18 — imagen en la configuración de mesa
+
+- Al marcar la mesa se vincula únicamente ImageAnalysis: no queda esperando la superficie
+  de un grabador inactivo. Al cerrar la configuración se vuelve a vincular VideoCapture,
+  con ImageAnalysis si se activó el reloj automático. Conserva los clips ya guardados.
+- La entrada de análisis usa YUV_420_888 y ImageProxy.toBitmap(), que gestiona la disposición
+  de planos de cada cámara, en vez de asumir bytes RGBA empaquetados. Se mantiene la rotación
+  y el límite de 640 píxeles para la vista y el reconocimiento.
+- Si no llega imagen en 6 s o falla su lectura, se muestra el motivo en la propia pantalla
+  y se ofrece Reintentar cámara. Con imagen, ese botón vuelve a ser Volver a marcar.
+- Activar queda deshabilitado hasta marcar el área y ver tres bolas durante dos segundos.
+- Conserva los cambios de repetición de v17, +3/+5 y el comprobante discreto de serie.
+- APK independiente `com.clubmarcothon.marcador.v18`; ramas anteriores intactas.
+
+Verificar en el dispositivo: abrir Marcar mesa antes de iniciar la partida y durante una
+partida; cancelar y comprobar Repetición; volver a configurar y activar; comprobar la
+imagen y luego el reloj/repetición sobre la mesa real. Compilar no valida el hardware.

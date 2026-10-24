@@ -48,8 +48,13 @@ final class TableCalibrationView extends View {
         return balls==null ? "No se distinguen las tres bolas. Ajusta luz/posición o vuelve a marcar la mesa."
                 : "Tres bolas detectadas. Comprueba que los círculos rodean las bolas reales.";
     }
+    boolean hasFrame() { return bitmap != null && pixels != null; }
+    boolean canActivate(long now) {
+        return candidate != null && pixels != null && balls != null && clearSince != 0
+                && now - clearSince >= 2000;
+    }
     TableBallDetector calibration(long now) {
-        if(candidate==null || pixels==null || balls==null || clearSince==0 || now-clearSince<2000) return null;
+        if (!canActivate(now)) return null;
         TableBallDetector detector=new TableBallDetector(corners);
         return detector.calibrate(pixels,width,height)?detector:null;
     }
