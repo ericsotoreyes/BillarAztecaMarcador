@@ -87,3 +87,13 @@ Cambios exclusivamente visuales sobre Marcothon v1:
 - Al abrir el flujo de **Nuevo partido**, el cronómetro activo se pausa inmediatamente.
 - Si el usuario cancela el cambio de partido, el cronómetro anterior se reanuda desde donde estaba, sin descontar el tiempo empleado en la ventana.
 - No se modificó ninguna otra lógica del marcador.
+
+
+## Marcothon v7 (en desarrollo)
+
+- Desde 10 segundos restantes, el cronómetro emite un bip cada segundo hasta llegar a cero.
+- Al agotarse el tiempo definitivo, emite un bip más fuerte y pausa el reloj.
+- Se abre una confirmación de falta por tiempo.
+- Si se confirma la falta, cambia el turno al rival y reinicia el cronómetro.
+- Si se cancela, el mismo jugador conserva el turno y el cronómetro se reinicia.
+- Las extensiones existentes se respetan: si una extensión estaba activada, el primer cero consume la extensión y la confirmación de falta solo aparece al agotarse el tiempo definitivo.
