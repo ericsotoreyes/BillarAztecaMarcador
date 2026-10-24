@@ -68,6 +68,7 @@ public class MainActivity extends Activity {
     private TextView inningView;
     private TextView activeView;
     private TimerRingView timerView;
+    private ImageView noTimerLogoView;
     private Button pauseButton;
     private Button resetButton;
     private Button undoButton;
@@ -478,6 +479,17 @@ public class MainActivity extends Activity {
         timerParams.setMargins(0, dp(5), 0, 0);
         center.addView(timerView, timerParams);
 
+        noTimerLogoView = new ImageView(this);
+        noTimerLogoView.setImageResource(R.drawable.marcothon_logo);
+        noTimerLogoView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        noTimerLogoView.setAdjustViewBounds(true);
+        noTimerLogoView.setVisibility(View.GONE);
+
+        LinearLayout.LayoutParams logoParams = new LinearLayout.LayoutParams(dp(121), dp(121));
+        logoParams.gravity = Gravity.CENTER_HORIZONTAL;
+        logoParams.setMargins(0, dp(5), 0, 0);
+        center.addView(noTimerLogoView, logoParams);
+
         timerView.setOnClickListener(v -> {
             if (useTimer) resetTimerManual();
         });
@@ -658,15 +670,20 @@ public class MainActivity extends Activity {
         undoButton.setEnabled(!history.isEmpty());
         undoButton.setAlpha(history.isEmpty() ? .55f : 1f);
 
-        timerView.setTimer(
-                secondsLeft,
-                shotSeconds,
-                paused,
-                extensionArmed,
-                gameStarted,
-                matchFinished,
-                useTimer
-        );
+        timerView.setVisibility(useTimer ? View.VISIBLE : View.GONE);
+        noTimerLogoView.setVisibility(useTimer ? View.GONE : View.VISIBLE);
+
+        if (useTimer) {
+            timerView.setTimer(
+                    secondsLeft,
+                    shotSeconds,
+                    paused,
+                    extensionArmed,
+                    gameStarted,
+                    matchFinished,
+                    true
+            );
+        }
 
         savePersistentState(false);
     }
