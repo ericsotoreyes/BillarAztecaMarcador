@@ -1,9 +1,10 @@
 package com.billarazteca.marcador;
 
-import android.app.Activity;
+import android.Manifest;
 import android.app.AlertDialog;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -12,6 +13,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -25,15 +27,34 @@ import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.MediaController;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.VideoView;
 
+
+import androidx.activity.ComponentActivity;
+import androidx.camera.core.CameraInfo;
+import androidx.camera.core.CameraSelector;
+import androidx.camera.lifecycle.ProcessCameraProvider;
+import androidx.camera.video.FileOutputOptions;
+import androidx.camera.video.Recorder;
+import androidx.camera.video.Recording;
+import androidx.camera.video.VideoCapture;
+import androidx.camera.video.VideoRecordEvent;
+import androidx.core.content.ContextCompat;
+
+import com.google.common.util.concurrent.ListenableFuture;
+
+import java.io.File;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
+import java.util.List;
 import java.util.Locale;
 
-public class MainActivity extends Activity {
+public class MainActivity extends ComponentActivity {
 
     private static final int YELLOW = Color.rgb(255, 214, 0);
     private static final int YELLOW_SOFT = Color.rgb(255, 227, 64);
@@ -47,6 +68,12 @@ public class MainActivity extends Activity {
     private static final int ORANGE = Color.rgb(255, 151, 28);
     private static final int RED = Color.rgb(225, 18, 36);
     private static final int LIGHT = Color.rgb(232, 236, 241);
+
+    private static final int CAMERA_PERMISSION_REQUEST = 7001;
+    private static final int REPLAY_SEGMENT_MS = 10_000;
+    private static final int REPLAY_MAX_SEGMENTS = 12;
+    private static final int CAMERA_SOURCE_FRONT = 0;
+    private static final int CAMERA_SOURCE_EXTERNAL = 1;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Deque<State> history = new ArrayDeque<>();
@@ -74,9 +101,31 @@ public class MainActivity extends Activity {
     private Button undoButton;
     private Button extension1Button;
     private Button extension2Button;
+    private Button replayButton;
 
     private ToneGenerator toneGenerator;
     private ToneGenerator warningToneGenerator;
+
+    private final Deque<File> replaySegments = new ArrayDeque<>();
+    private ProcessCameraProvider replayCameraProvider;
+    private VideoCapture<Recorder> replayVideoCapture;
+    private Recording replayRecording;
+    private boolean replayCaptureDesired = false;
+    private boolean replayPlaybackOpen = false;
+    private boolean replayOptionsPending = false;
+    private boolean resumeTimerAfterReplay = false;
+    private boolean cameraProviderInitInProgress = false;
+    private boolean cameraPermissionRequestInFlight = false;
+    private int replayCameraSource = CAMERA_SOURCE_FRONT;
+
+    private final Runnable rotateReplayRunnable = () -> {
+        if (replayRecording != null) {
+            try {
+                replayRecording.stop();
+            } catch (Throwable ignored) {
+            }
+        }
+    };
 
     private String tableName = "Mesa 1";
     private String player1 = "Jugador 1";
@@ -118,6 +167,10 @@ public class MainActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         enableFullscreen();
 
+        replayCameraSource = getSharedPreferences("replay_settings", MODE_PRIVATE)
+                .getInt("camera_source", CAMERA_SOURCE_FRONT);
+        clearReplayCacheDirectory();
+
         try {
             boolean recoveredMatch = restoreSavedMatch();
             persistenceReady = true;
@@ -139,10 +192,15 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         enableFullscreen();
+
+        if (gameStarted && !matchFinished && !replayPlaybackOpen) {
+            startReplayCaptureIfReady();
+        }
     }
 
     @Override
     protected void onPause() {
+        stopReplayCapture();
         savePersistentState(true);
         super.onPause();
     }
@@ -163,6 +221,15 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         savePersistentState(true);
         handler.removeCallbacks(timerRunnable);
+        handler.removeCallbacks(rotateReplayRunnable);
+        stopReplayCapture();
+
+        if (replayCameraProvider != null) {
+            try {
+                replayCameraProvider.unbindAll();
+            } catch (Throwable ignored) {
+            }
+        }
         if (toneGenerator != null) {
             try {
                 toneGenerator.release();
@@ -513,11 +580,12 @@ public class MainActivity extends Activity {
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setPadding(0, dp(4), 0, 0);
 
-        undoButton = styledButton("↶  Deshacer", Color.rgb(150, 156, 164), Color.rgb(14, 21, 29), 14);
-        Button endTurn = styledButton("FIN DE TURNO", YELLOW, Color.BLACK, 19);
-        pauseButton = styledButton("INICIAR PARTIDA", YELLOW, Color.BLACK, 14);
-        resetButton = styledButton("Reiniciar reloj", LIGHT, Color.rgb(14, 21, 29), 13);
-        Button newGame = styledButton("Nuevo partido", LIGHT, Color.rgb(14, 21, 29), 13);
+        undoButton = styledButton("↶  Deshacer", Color.rgb(150, 156, 164), Color.rgb(14, 21, 29), 13);
+        Button endTurn = styledButton("FIN DE TURNO", YELLOW, Color.BLACK, 17);
+        pauseButton = styledButton("INICIAR PARTIDA", YELLOW, Color.BLACK, 12);
+        resetButton = styledButton("Reiniciar reloj", LIGHT, Color.rgb(14, 21, 29), 12);
+        replayButton = styledButton("▶ Repetición", GREEN, Color.WHITE, 12);
+        Button newGame = styledButton("Nuevo partido", LIGHT, Color.rgb(14, 21, 29), 12);
 
         undoButton.setOnClickListener(v -> undo());
         endTurn.setOnClickListener(v -> finishTurn());
@@ -527,13 +595,19 @@ public class MainActivity extends Activity {
                 resetTimerManual();
             }
         });
+        replayButton.setOnClickListener(v -> beginReplayReview());
+        replayButton.setOnLongClickListener(v -> {
+            showReplayCameraSourceDialog();
+            return true;
+        });
         newGame.setOnClickListener(v -> requestNewGame());
 
-        actions.addView(undoButton, actionParams(1.0f));
-        actions.addView(endTurn, actionParams(2.15f));
-        actions.addView(pauseButton, actionParams(.85f));
-        actions.addView(resetButton, actionParams(1.12f));
-        actions.addView(newGame, actionParams(1.05f));
+        actions.addView(undoButton, actionParams(.82f));
+        actions.addView(endTurn, actionParams(1.72f));
+        actions.addView(pauseButton, actionParams(.78f));
+        actions.addView(resetButton, actionParams(.92f));
+        actions.addView(replayButton, actionParams(1.02f));
+        actions.addView(newGame, actionParams(.96f));
 
         return actions;
     }
@@ -669,6 +743,16 @@ public class MainActivity extends Activity {
 
         undoButton.setEnabled(!history.isEmpty());
         undoButton.setAlpha(history.isEmpty() ? .55f : 1f);
+
+        if (replayButton != null) {
+            replayButton.setEnabled(gameStarted && !matchFinished && !replayPlaybackOpen);
+            replayButton.setAlpha((gameStarted && !matchFinished && !replayPlaybackOpen) ? 1f : .55f);
+            replayButton.setText(
+                    replayCameraSource == CAMERA_SOURCE_EXTERNAL
+                            ? "▶ Replay USB"
+                            : "▶ Repetición"
+            );
+        }
 
         timerView.setVisibility(useTimer ? View.VISIBLE : View.GONE);
         noTimerLogoView.setVisibility(useTimer ? View.GONE : View.VISIBLE);
@@ -839,6 +923,8 @@ public class MainActivity extends Activity {
                     useTimer ? "Partida iniciada" : "Partida iniciada sin cronómetro",
                     Toast.LENGTH_SHORT
             ).show();
+
+            startReplayCaptureIfReady();
             return;
         }
 
@@ -1217,6 +1303,7 @@ public class MainActivity extends Activity {
                 .setNegativeButton("Cancelar", null)
                 .setPositiveButton("Cerrar", (dialog, which) -> {
                     savePersistentState(true);
+                    stopReplayCapture();
                     handler.removeCallbacks(timerRunnable);
                     finishAndRemoveTask();
                 })
@@ -1275,6 +1362,7 @@ public class MainActivity extends Activity {
     }
 
     private void showWinner(int player) {
+        stopReplayCapture();
         recoveryActive = false;
         clearSavedMatch();
 
@@ -1401,6 +1489,9 @@ public class MainActivity extends Activity {
                         extensionArmed = false;
                         timeFoulDialogShown = false;
 
+                        stopReplayCapture();
+                        clearReplayBuffer();
+
                         paused = false;
                         gameStarted = false;
                         matchFinished = false;
@@ -1488,6 +1579,593 @@ public class MainActivity extends Activity {
 
         lastTick = System.currentTimeMillis();
         refresh();
+    }
+
+    private boolean hasCameraPermission() {
+        return checkSelfPermission(Manifest.permission.CAMERA) ==
+                PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void requestReplayCameraPermission() {
+        if (cameraPermissionRequestInFlight) return;
+
+        cameraPermissionRequestInFlight = true;
+        requestPermissions(
+                new String[]{Manifest.permission.CAMERA},
+                CAMERA_PERMISSION_REQUEST
+        );
+    }
+
+    @Override
+    public void onRequestPermissionsResult(
+            int requestCode,
+            String[] permissions,
+            int[] grantResults
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode != CAMERA_PERMISSION_REQUEST) return;
+
+        cameraPermissionRequestInFlight = false;
+
+        boolean granted =
+                grantResults.length > 0 &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED;
+
+        if (granted) {
+            Toast.makeText(
+                    this,
+                    "Cámara habilitada para repetición instantánea",
+                    Toast.LENGTH_SHORT
+            ).show();
+            startReplayCaptureIfReady();
+        } else {
+            Toast.makeText(
+                    this,
+                    "La repetición necesita permiso para usar la cámara",
+                    Toast.LENGTH_LONG
+            ).show();
+        }
+    }
+
+    private void startReplayCaptureIfReady() {
+        if (!gameStarted || matchFinished || replayPlaybackOpen) return;
+
+        replayCaptureDesired = true;
+
+        if (!hasCameraPermission()) {
+            requestReplayCameraPermission();
+            return;
+        }
+
+        if (replayCameraProvider == null) {
+            initializeReplayCameraProvider();
+            return;
+        }
+
+        if (replayVideoCapture == null) {
+            bindReplayCamera();
+            return;
+        }
+
+        if (replayRecording == null) {
+            startReplaySegment();
+        }
+    }
+
+    private void initializeReplayCameraProvider() {
+        if (cameraProviderInitInProgress || replayCameraProvider != null) return;
+
+        cameraProviderInitInProgress = true;
+        ListenableFuture<ProcessCameraProvider> future =
+                ProcessCameraProvider.getInstance(this);
+
+        future.addListener(() -> {
+            cameraProviderInitInProgress = false;
+
+            try {
+                replayCameraProvider = future.get();
+                bindReplayCamera();
+            } catch (Throwable error) {
+                replayCaptureDesired = false;
+                Toast.makeText(
+                        MainActivity.this,
+                        "No se pudo iniciar la cámara de repetición",
+                        Toast.LENGTH_LONG
+                ).show();
+            }
+        }, ContextCompat.getMainExecutor(this));
+    }
+
+    @androidx.annotation.OptIn(markerClass = androidx.camera.core.ExperimentalLensFacing.class)
+    private CameraSelector selectedReplayCameraSelector() {
+        if (replayCameraSource == CAMERA_SOURCE_EXTERNAL &&
+                replayCameraProvider != null) {
+
+            for (CameraInfo info : replayCameraProvider.getAvailableCameraInfos()) {
+                try {
+                    if (info.getLensFacing() == CameraSelector.LENS_FACING_EXTERNAL) {
+                        return info.getCameraSelector();
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+
+        return CameraSelector.DEFAULT_FRONT_CAMERA;
+    }
+
+    @androidx.annotation.OptIn(markerClass = androidx.camera.core.ExperimentalLensFacing.class)
+    private boolean hasExternalReplayCamera() {
+        if (replayCameraProvider == null) return false;
+
+        for (CameraInfo info : replayCameraProvider.getAvailableCameraInfos()) {
+            try {
+                if (info.getLensFacing() == CameraSelector.LENS_FACING_EXTERNAL) {
+                    return true;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+
+        return false;
+    }
+
+    private void bindReplayCamera() {
+        if (replayCameraProvider == null || !hasCameraPermission()) return;
+
+        try {
+            replayCameraProvider.unbindAll();
+
+            Recorder recorder = new Recorder.Builder().build();
+            replayVideoCapture = VideoCapture.withOutput(recorder);
+
+            CameraSelector selector = selectedReplayCameraSelector();
+            replayCameraProvider.bindToLifecycle(
+                    this,
+                    selector,
+                    replayVideoCapture
+            );
+
+            if (replayCaptureDesired && !replayPlaybackOpen) {
+                startReplaySegment();
+            }
+        } catch (Throwable error) {
+            if (replayCameraSource == CAMERA_SOURCE_EXTERNAL) {
+                replayCameraSource = CAMERA_SOURCE_FRONT;
+                saveReplayCameraSource();
+                replayVideoCapture = null;
+
+                Toast.makeText(
+                        this,
+                        "La cámara USB no está disponible. Se usará la cámara frontal.",
+                        Toast.LENGTH_LONG
+                ).show();
+
+                bindReplayCamera();
+            } else {
+                replayCaptureDesired = false;
+                replayVideoCapture = null;
+
+                Toast.makeText(
+                        this,
+                        "No se encontró una cámara frontal compatible",
+                        Toast.LENGTH_LONG
+                ).show();
+            }
+        }
+    }
+
+    private void startReplaySegment() {
+        if (!replayCaptureDesired ||
+                replayPlaybackOpen ||
+                replayVideoCapture == null ||
+                replayRecording != null ||
+                !gameStarted ||
+                matchFinished) {
+            return;
+        }
+
+        File directory = new File(getCacheDir(), "instant_replay");
+        if (!directory.exists() && !directory.mkdirs()) {
+            replayCaptureDesired = false;
+            return;
+        }
+
+        final File segmentFile = new File(
+                directory,
+                "segment_" + System.currentTimeMillis() + ".mp4"
+        );
+
+        FileOutputOptions outputOptions =
+                new FileOutputOptions.Builder(segmentFile).build();
+
+        try {
+            replayRecording = replayVideoCapture
+                    .getOutput()
+                    .prepareRecording(this, outputOptions)
+                    .start(
+                            ContextCompat.getMainExecutor(this),
+                            event -> {
+                                if (!(event instanceof VideoRecordEvent.Finalize)) {
+                                    return;
+                                }
+
+                                handler.removeCallbacks(rotateReplayRunnable);
+                                replayRecording = null;
+
+                                VideoRecordEvent.Finalize finalized =
+                                        (VideoRecordEvent.Finalize) event;
+
+                                if (!finalized.hasError() &&
+                                        segmentFile.exists() &&
+                                        segmentFile.length() > 0) {
+                                    addReplaySegment(segmentFile);
+                                } else {
+                                    try {
+                                        segmentFile.delete();
+                                    } catch (Throwable ignored) {
+                                    }
+                                }
+
+                                if (replayOptionsPending) {
+                                    replayOptionsPending = false;
+                                    handler.post(this::showReplayOptionsDialog);
+                                    return;
+                                }
+
+                                if (replayCaptureDesired &&
+                                        !replayPlaybackOpen &&
+                                        gameStarted &&
+                                        !matchFinished) {
+                                    handler.post(this::startReplaySegment);
+                                }
+                            }
+                    );
+
+            handler.postDelayed(rotateReplayRunnable, REPLAY_SEGMENT_MS);
+        } catch (Throwable error) {
+            replayRecording = null;
+            replayCaptureDesired = false;
+
+            try {
+                segmentFile.delete();
+            } catch (Throwable ignored) {
+            }
+
+            Toast.makeText(
+                    this,
+                    "No se pudo iniciar la grabación temporal",
+                    Toast.LENGTH_SHORT
+            ).show();
+        }
+    }
+
+    private void addReplaySegment(File file) {
+        replaySegments.addLast(file);
+
+        while (replaySegments.size() > REPLAY_MAX_SEGMENTS) {
+            File old = replaySegments.removeFirst();
+
+            try {
+                old.delete();
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
+    private void stopReplayCapture() {
+        replayCaptureDesired = false;
+        handler.removeCallbacks(rotateReplayRunnable);
+
+        if (replayRecording != null) {
+            try {
+                replayRecording.stop();
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
+    private void clearReplayBuffer() {
+        replayOptionsPending = false;
+
+        while (!replaySegments.isEmpty()) {
+            File file = replaySegments.removeFirst();
+
+            try {
+                file.delete();
+            } catch (Throwable ignored) {
+            }
+        }
+
+        clearReplayCacheDirectory();
+    }
+
+    private void clearReplayCacheDirectory() {
+        File directory = new File(getCacheDir(), "instant_replay");
+        File[] files = directory.listFiles();
+
+        if (files == null) return;
+
+        for (File file : files) {
+            try {
+                file.delete();
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
+    private void beginReplayReview() {
+        if (!gameStarted || matchFinished) {
+            Toast.makeText(
+                    this,
+                    "La repetición está disponible durante una partida",
+                    Toast.LENGTH_SHORT
+            ).show();
+            return;
+        }
+
+        if (!hasCameraPermission()) {
+            requestReplayCameraPermission();
+            return;
+        }
+
+        resumeTimerAfterReplay =
+                useTimer &&
+                gameStarted &&
+                !paused &&
+                !matchFinished;
+
+        if (resumeTimerAfterReplay) {
+            paused = true;
+            lastTick = System.currentTimeMillis();
+            refresh();
+        }
+
+        replayPlaybackOpen = true;
+        replayCaptureDesired = false;
+
+        if (replayRecording != null) {
+            replayOptionsPending = true;
+            handler.removeCallbacks(rotateReplayRunnable);
+
+            try {
+                replayRecording.stop();
+            } catch (Throwable ignored) {
+                replayOptionsPending = false;
+                showReplayOptionsDialog();
+            }
+        } else {
+            showReplayOptionsDialog();
+        }
+    }
+
+    private void showReplayOptionsDialog() {
+        if (!replayPlaybackOpen) return;
+
+        if (replaySegments.isEmpty()) {
+            Toast.makeText(
+                    this,
+                    "Todavía no hay video suficiente para repetir",
+                    Toast.LENGTH_SHORT
+            ).show();
+            endReplayReview();
+            return;
+        }
+
+        String[] options = new String[]{
+                "Últimos 30 segundos",
+                "Últimos 60 segundos",
+                "Últimos 90 segundos"
+        };
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Repetición instantánea")
+                .setItems(options, (d, which) -> {
+                    int seconds = which == 0 ? 30 : (which == 1 ? 60 : 90);
+                    showReplayPlayer(seconds);
+                })
+                .setNegativeButton("Cancelar", (d, which) -> endReplayReview())
+                .create();
+
+        dialog.setOnCancelListener(d -> endReplayReview());
+        dialog.show();
+    }
+
+    private List<File> recentReplayFiles(int requestedSeconds) {
+        ArrayList<File> all = new ArrayList<>(replaySegments);
+
+        int requestedSegments = Math.max(
+                1,
+                (int) Math.ceil(
+                        requestedSeconds * 1000.0 / REPLAY_SEGMENT_MS
+                )
+        );
+
+        int start = Math.max(0, all.size() - requestedSegments);
+        return new ArrayList<>(all.subList(start, all.size()));
+    }
+
+    private void showReplayPlayer(int requestedSeconds) {
+        List<File> files = recentReplayFiles(requestedSeconds);
+
+        if (files.isEmpty()) {
+            endReplayReview();
+            return;
+        }
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(10), dp(8), dp(10), dp(4));
+
+        TextView status = text("", 13, Color.DKGRAY, true);
+        status.setGravity(Gravity.CENTER);
+
+        VideoView video = new VideoView(this);
+        MediaController controls = new MediaController(this);
+        controls.setAnchorView(video);
+        video.setMediaController(controls);
+
+        box.addView(status, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(30)
+        ));
+
+        box.addView(video, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(330)
+        ));
+
+        TextView note = text(
+                "Los fragmentos se reproducen en orden. Usa los controles del video para pausar o retroceder dentro de cada fragmento.",
+                12,
+                Color.DKGRAY,
+                false
+        );
+        note.setPadding(dp(6), dp(5), dp(6), dp(2));
+        note.setGravity(Gravity.CENTER);
+        box.addView(note);
+
+        final int[] index = {0};
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Repetición · hasta " + requestedSeconds + " s")
+                .setView(box)
+                .setPositiveButton("Volver al marcador", null)
+                .create();
+
+        dialog.setOnShowListener(v ->
+                playReplayFile(video, status, files, index));
+
+        dialog.setOnDismissListener(v -> endReplayReview());
+        dialog.show();
+    }
+
+    private void playReplayFile(
+            VideoView video,
+            TextView status,
+            List<File> files,
+            int[] index
+    ) {
+        if (index[0] < 0 || index[0] >= files.size()) return;
+
+        File file = files.get(index[0]);
+
+        status.setText(
+                "Fragmento " + (index[0] + 1) + " de " + files.size()
+        );
+
+        video.setVideoURI(Uri.fromFile(file));
+        video.setOnPreparedListener(mediaPlayer -> video.start());
+        video.setOnCompletionListener(mediaPlayer -> {
+            index[0]++;
+
+            if (index[0] < files.size()) {
+                playReplayFile(video, status, files, index);
+            } else {
+                status.setText("Repetición terminada");
+            }
+        });
+    }
+
+    private void endReplayReview() {
+        if (!replayPlaybackOpen && !replayOptionsPending) return;
+
+        replayPlaybackOpen = false;
+        replayOptionsPending = false;
+
+        if (resumeTimerAfterReplay &&
+                useTimer &&
+                gameStarted &&
+                !matchFinished) {
+            paused = false;
+            lastTick = System.currentTimeMillis();
+        }
+
+        resumeTimerAfterReplay = false;
+        refresh();
+
+        if (gameStarted && !matchFinished) {
+            startReplayCaptureIfReady();
+        }
+    }
+
+    private void showReplayCameraSourceDialog() {
+        if (!hasCameraPermission()) {
+            requestReplayCameraPermission();
+            return;
+        }
+
+        if (replayCameraProvider == null) {
+            initializeReplayCameraProvider();
+            Toast.makeText(
+                    this,
+                    "Inicializando cámaras. Mantén presionado Repetición nuevamente.",
+                    Toast.LENGTH_SHORT
+            ).show();
+            return;
+        }
+
+        boolean externalAvailable = hasExternalReplayCamera();
+
+        if (!externalAvailable) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Cámara para repetición")
+                    .setMessage(
+                            "Actualmente se usa la cámara frontal. " +
+                            "Cuando Android detecte una cámara USB externa compatible, " +
+                            "podrás seleccionarla desde este mismo menú."
+                    )
+                    .setPositiveButton("Entendido", null)
+                    .show();
+            return;
+        }
+
+        String[] options = new String[]{
+                "Cámara frontal",
+                "Cámara USB / externa"
+        };
+
+        new AlertDialog.Builder(this)
+                .setTitle("Cámara para repetición")
+                .setSingleChoiceItems(
+                        options,
+                        replayCameraSource == CAMERA_SOURCE_EXTERNAL ? 1 : 0,
+                        (dialog, which) -> {
+                            replayCameraSource =
+                                    which == 1
+                                            ? CAMERA_SOURCE_EXTERNAL
+                                            : CAMERA_SOURCE_FRONT;
+
+                            saveReplayCameraSource();
+                            stopReplayCapture();
+                            clearReplayBuffer();
+
+                            if (replayCameraProvider != null) {
+                                try {
+                                    replayCameraProvider.unbindAll();
+                                } catch (Throwable ignored) {
+                                }
+                            }
+
+                            replayVideoCapture = null;
+                            dialog.dismiss();
+                            refresh();
+
+                            if (gameStarted && !matchFinished) {
+                                startReplayCaptureIfReady();
+                            }
+                        }
+                )
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void saveReplayCameraSource() {
+        getSharedPreferences("replay_settings", MODE_PRIVATE)
+                .edit()
+                .putInt("camera_source", replayCameraSource)
+                .apply();
     }
 
     private final Runnable timerRunnable = new Runnable() {
