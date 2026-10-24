@@ -2137,24 +2137,37 @@ public class MainActivity extends ComponentActivity {
         return text.length() > 500 ? text.substring(0, 500) : text.toString();
     }
 
-    private boolean bindRecordingCamera(CameraSelector selector, boolean withClock) {
-        // Every attempt creates a fresh Recorder and new analysis use case. A Recorder
-        // from a rejected combination must not be reused for the video-only fallback.
+    private boolean bindRecordingCamera(boolean withClock) {
+        // Every attempt releases the old use cases first and THEN resolves the camera
+        // again. On some devices CameraInfo.getCameraSelector() is tied to the provider's
+        // current camera set; reusing it after unbindAll() can produce
+        // "No available camera can be found".
         Quality[] choices = withClock
                 ? new Quality[]{Quality.SD, Quality.HD, Quality.FHD}
                 : new Quality[]{null, Quality.HD, Quality.SD};
         for (Quality quality : choices) {
             try {
                 releaseCameraBindings();
+                CameraSelector freshSelector = selectedReplayCameraSelector();
+
                 Recorder.Builder builder = new Recorder.Builder();
                 if (quality != null) builder.setQualitySelector(QualitySelector.from(quality));
                 replayVideoCapture = VideoCapture.withOutput(builder.build());
                 if (withClock) {
                     clockAnalysis = createClockAnalysis(cameraGeneration);
-                    replayCameraProvider.bindToLifecycle(this, selector, replayVideoCapture, clockAnalysis);
+                    replayCameraProvider.bindToLifecycle(
+                            this,
+                            freshSelector,
+                            replayVideoCapture,
+                            clockAnalysis
+                    );
                 } else {
                     // First attempt is the default video-only configuration used by v17.
-                    replayCameraProvider.bindToLifecycle(this, selector, replayVideoCapture);
+                    replayCameraProvider.bindToLifecycle(
+                            this,
+                            freshSelector,
+                            replayVideoCapture
+                    );
                 }
                 replayLastProblem = "";
                 return true;
@@ -2177,19 +2190,21 @@ public class MainActivity extends ComponentActivity {
             return;
         }
         try {
-            CameraSelector selector = selectedReplayCameraSelector();
             if (cameraSetupOpen) {
+                // Release first, then resolve the camera again. Reusing a selector
+                // created before unbindAll() fails on some tablets/phones.
                 releaseCameraBindings();
+                CameraSelector setupSelector = selectedReplayCameraSelector();
                 calibrationFrameAt = 0;
                 lastAnalyzedFrame = 0;
                 clockAnalysis = createClockAnalysis(cameraGeneration);
-                replayCameraProvider.bindToLifecycle(this, selector, clockAnalysis);
+                replayCameraProvider.bindToLifecycle(this, setupSelector, clockAnalysis);
                 handler.removeCallbacks(calibrationFrameTimeout);
                 handler.postDelayed(calibrationFrameTimeout, 6000L);
                 return;
             }
             boolean clockRequested = cameraClockEnabled;
-            boolean bound = bindRecordingCamera(selector, clockRequested);
+            boolean bound = bindRecordingCamera(clockRequested);
             boolean clockFallback = false;
             String combinedProblem = replayLastProblem;
             if (!bound && clockRequested) {
@@ -2199,7 +2214,7 @@ public class MainActivity extends ComponentActivity {
                 calibratedTable = null;
                 if (useTimer && gameStarted && !matchFinished) paused = true;
                 invalidateVision();
-                bound = bindRecordingCamera(selector, false);
+                bound = bindRecordingCamera(false);
                 clockFallback = bound;
                 refresh();
             }
