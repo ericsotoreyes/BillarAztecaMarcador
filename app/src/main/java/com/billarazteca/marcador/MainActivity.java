@@ -674,25 +674,17 @@ public class MainActivity extends Activity {
     private void updateExtensionButton(Button button, int player, int remaining) {
         if (button == null) return;
 
-        boolean isCurrent = player == currentPlayer;
-
-        if (!useTimer || !gameStarted || matchFinished) {
-            button.setText(useTimer ? "Extensión · " + remaining : "Sin reloj");
+        if (!useTimer) {
+            button.setText("Sin reloj");
             button.setEnabled(false);
             button.setTextColor(Color.rgb(45, 50, 58));
-            button.setBackground(roundRect(Color.rgb(205, 209, 214), Color.argb(30, 0, 0, 0), 1, 10));
+            button.setBackground(roundRect(
+                    Color.rgb(205, 209, 214),
+                    Color.argb(30, 0, 0, 0),
+                    1,
+                    10
+            ));
             button.setAlpha(.65f);
-            return;
-        }
-
-        boolean armedHere = isCurrent && extensionArmed;
-
-        if (armedHere) {
-            button.setText("EXT. ACTIVA");
-            button.setEnabled(false);
-            button.setTextColor(Color.BLACK);
-            button.setBackground(roundRect(ORANGE, Color.argb(70, 0, 0, 0), 1, 10));
-            button.setAlpha(1f);
             return;
         }
 
@@ -700,23 +692,26 @@ public class MainActivity extends Activity {
             button.setText("Sin ext.");
             button.setEnabled(false);
             button.setTextColor(Color.rgb(80, 85, 92));
-            button.setBackground(roundRect(Color.rgb(185, 189, 194), Color.argb(30, 0, 0, 0), 1, 10));
+            button.setBackground(roundRect(
+                    Color.rgb(185, 189, 194),
+                    Color.argb(30, 0, 0, 0),
+                    1,
+                    10
+            ));
             button.setAlpha(.75f);
             return;
         }
 
-        button.setText("Extensión · " + remaining);
-        button.setEnabled(isCurrent);
-
-        if (isCurrent) {
-            button.setTextColor(Color.BLACK);
-            button.setBackground(roundRect(YELLOW, Color.argb(70, 0, 0, 0), 1, 10));
-            button.setAlpha(1f);
-        } else {
-            button.setTextColor(Color.rgb(45, 50, 58));
-            button.setBackground(roundRect(Color.rgb(205, 209, 214), Color.argb(30, 0, 0, 0), 1, 10));
-            button.setAlpha(.65f);
-        }
+        button.setText("Extensiones · " + remaining);
+        button.setEnabled(false);
+        button.setTextColor(Color.rgb(45, 50, 58));
+        button.setBackground(roundRect(
+                Color.rgb(205, 209, 214),
+                Color.argb(30, 0, 0, 0),
+                1,
+                10
+        ));
+        button.setAlpha(.85f);
     }
 
     private void addPoint(int player) {
@@ -799,48 +794,16 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "Esta partida no usa cronómetro", Toast.LENGTH_SHORT).show();
             return;
         }
-        if (!gameStarted || matchFinished) {
-            Toast.makeText(this, "Primero inicia la partida", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        if (player != currentPlayer) return;
 
         int remaining = player == 1 ? extensions1 : extensions2;
 
-        if (extensionArmed) {
-            Toast.makeText(this, "Ya hay una extensión activada", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        if (remaining <= 0) {
-            Toast.makeText(this, "Este jugador ya usó sus 2 extensiones", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        pushState();
-
-        if (player == 1) {
-            extensions1--;
-        } else {
-            extensions2--;
-        }
-
-        if (secondsLeft <= 0) {
-            secondsLeft = shotSeconds;
-            extensionArmed = false;
-            paused = false;
-            lastTick = System.currentTimeMillis();
-            Toast.makeText(this, "Extensión aplicada", Toast.LENGTH_SHORT).show();
-        } else {
-            extensionArmed = true;
-            Toast.makeText(
-                    this,
-                    "Extensión activada: al llegar a 0 el reloj reinicia una vez",
-                    Toast.LENGTH_SHORT
-            ).show();
-        }
-
-        refresh();
+        Toast.makeText(
+                this,
+                remaining > 0
+                        ? "Las extensiones se aplican automáticamente al llegar a 0"
+                        : "Este jugador ya agotó sus extensiones",
+                Toast.LENGTH_SHORT
+        ).show();
     }
 
     private void handleStartPause() {
@@ -1539,17 +1502,34 @@ public class MainActivity extends Activity {
                         }
 
                         if (previousSeconds > 0 && secondsLeft == 0) {
-                            if (extensionArmed) {
-                                secondsLeft = shotSeconds;
+                            int remainingExtensions =
+                                    currentPlayer == 1 ? extensions1 : extensions2;
+
+                            if (remainingExtensions > 0) {
+                                playWarningBeep();
+
+                                if (currentPlayer == 1) {
+                                    extensions1--;
+                                } else {
+                                    extensions2--;
+                                }
+
                                 extensionArmed = false;
                                 timeFoulDialogShown = false;
+                                secondsLeft = shotSeconds;
+                                paused = false;
                                 lastTick = now;
+
+                                int leftAfter =
+                                        currentPlayer == 1 ? extensions1 : extensions2;
 
                                 Toast.makeText(
                                         MainActivity.this,
-                                        "Extensión: tiempo reiniciado",
+                                        "Extensión automática aplicada · quedan " + leftAfter,
                                         Toast.LENGTH_SHORT
                                 ).show();
+
+                                refresh();
                             } else {
                                 paused = true;
                                 playTimeExpiredBeep();
