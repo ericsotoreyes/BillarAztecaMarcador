@@ -323,3 +323,12 @@ DEFAULT_FRONT_CAMERA exige LensFilter=0 y no puede seleccionar ninguna.
 - Pruebas de regresión para el inventario exacto de la captura, ambas cámaras con igual
   etiqueta, selección guardada, cambio de orden, USB ausente/disponible e inventario vacío.
 - APK independiente `com.clubmarcothon.marcador.v20`; versiones anteriores intactas.
+
+
+## Marcothon v21
+
+- Corrige un fallo de CameraX visto en la mesa al abrir **Marca las cuatro esquinas interiores del paño**:
+  `IllegalArgumentException: No available camera can be found`.
+- La app ya no reutiliza un `CameraSelector` creado antes de `unbindAll()`.
+- Después de liberar la cámara, vuelve a consultar las cámaras disponibles y crea un selector fresco antes de enlazar análisis o grabación.
+- El mismo criterio se aplica a cada intento de calidad de grabación y al modo de marcado de mesa.
