@@ -2017,7 +2017,7 @@ public class MainActivity extends ComponentActivity {
         ));
 
         TextView note = text(
-                "Los fragmentos se reproducen en orden. Usa los controles del video para pausar o retroceder dentro de cada fragmento.",
+                "⏮ Anterior y ⏭ Siguiente cambian de fragmento. Reproducir/pausa y la barra controlan el fragmento actual.",
                 12,
                 Color.DKGRAY,
                 false
@@ -2027,6 +2027,33 @@ public class MainActivity extends ComponentActivity {
         box.addView(note);
 
         final int[] index = {0};
+
+        controls.setPrevNextListeners(
+                v -> {
+                    if (index[0] < files.size() - 1) {
+                        index[0]++;
+                        playReplayFile(video, status, files, index);
+                    } else {
+                        Toast.makeText(
+                                MainActivity.this,
+                                "Ya estás en el último fragmento",
+                                Toast.LENGTH_SHORT
+                        ).show();
+                    }
+                },
+                v -> {
+                    if (index[0] > 0) {
+                        index[0]--;
+                        playReplayFile(video, status, files, index);
+                    } else {
+                        Toast.makeText(
+                                MainActivity.this,
+                                "Ya estás en el primer fragmento",
+                                Toast.LENGTH_SHORT
+                        ).show();
+                    }
+                }
+        );
 
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Repetición · hasta " + requestedSeconds + " s")
