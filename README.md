@@ -76,3 +76,14 @@ Cambios exclusivamente visuales sobre Marcothon v1:
 - Si había cronómetro activo, siempre se recupera en pausa para evitar descontar tiempo mientras la tablet estuvo apagada.
 - Al terminar una partida normalmente se elimina el respaldo.
 - No requiere internet y no cambia la lógica de juego existente.
+
+
+## Marcothon v6
+
+- Basada en Marcothon v5 estable.
+- En **Nuevo partido**, la opción **Usar cronómetro** aparece desmarcada por defecto.
+- Los segundos por tiro permanecen deshabilitados hasta seleccionar **Usar cronómetro**.
+- La ventana **Nuevo partido** ahora tiene desplazamiento vertical para que todos los campos sean visibles en distintas resoluciones.
+- Al abrir el flujo de **Nuevo partido**, el cronómetro activo se pausa inmediatamente.
+- Si el usuario cancela el cambio de partido, el cronómetro anterior se reanuda desde donde estaba, sin descontar el tiempo empleado en la ventana.
+- No se modificó ninguna otra lógica del marcador.
