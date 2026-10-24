@@ -113,3 +113,12 @@ Cambios exclusivamente visuales sobre Marcothon v1:
 - Cuando una partida se configura **sin cronómetro**, el reloj desaparece completamente del área central.
 - En su lugar se muestra el **logo de Club Billar Marcothon** ocupando el mismo espacio.
 - Si la partida usa cronómetro, el logo se oculta y se muestra el reloj normalmente.
+
+
+## Marcothon v9
+
+- Corrige la navegación dentro de **Repetición instantánea**.
+- Los botones **Anterior** y **Siguiente** del reproductor ahora cargan el fragmento temporal anterior o siguiente, respectivamente.
+- Al llegar al primer o último fragmento se muestra un aviso y se mantiene el clip actual.
+- La reproducción automática sigue avanzando al siguiente fragmento cuando termina el actual.
+- La barra de progreso y reproducir/pausa siguen actuando sobre el fragmento actual.
