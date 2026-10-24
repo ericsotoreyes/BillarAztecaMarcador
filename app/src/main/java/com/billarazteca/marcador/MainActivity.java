@@ -25,6 +25,7 @@ import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -1230,6 +1231,18 @@ public class MainActivity extends Activity {
     }
 
     private void requestNewGame() {
+        final boolean resumeTimerOnCancel =
+                useTimer &&
+                gameStarted &&
+                !paused &&
+                !matchFinished;
+
+        if (resumeTimerOnCancel) {
+            paused = true;
+            lastTick = System.currentTimeMillis();
+            refresh();
+        }
+
         boolean hasProgress =
                 gameStarted ||
                 matchFinished ||
@@ -1241,16 +1254,31 @@ public class MainActivity extends Activity {
                 extensions2 < 2;
 
         if (!hasProgress) {
-            showNewGameDialog();
+            showNewGameDialog(resumeTimerOnCancel);
             return;
         }
 
-        new AlertDialog.Builder(this)
+        AlertDialog confirmation = new AlertDialog.Builder(this)
                 .setTitle("Nuevo partido")
                 .setMessage("Se borrará el marcador actual, las entradas y las extensiones utilizadas. ¿Continuar?")
-                .setNegativeButton("Cancelar", null)
-                .setPositiveButton("Continuar", (dialog, which) -> showNewGameDialog())
-                .show();
+                .setNegativeButton("Cancelar", (dialog, which) ->
+                        resumeTimerAfterNewGameCancel(resumeTimerOnCancel))
+                .setPositiveButton("Continuar", (dialog, which) ->
+                        showNewGameDialog(resumeTimerOnCancel))
+                .create();
+
+        confirmation.setOnCancelListener(dialog ->
+                resumeTimerAfterNewGameCancel(resumeTimerOnCancel));
+
+        confirmation.show();
+    }
+
+    private void resumeTimerAfterNewGameCancel(boolean shouldResume) {
+        if (shouldResume && useTimer && gameStarted && !matchFinished) {
+            paused = false;
+            lastTick = System.currentTimeMillis();
+            refresh();
+        }
     }
 
     private void showWinner(int player) {
@@ -1276,9 +1304,27 @@ public class MainActivity extends Activity {
     }
 
     private void showNewGameDialog() {
+        showNewGameDialog(false);
+    }
+
+    private void showNewGameDialog(boolean resumeTimerOnCancel) {
+        final boolean resumeAfterCancel =
+                resumeTimerOnCancel ||
+                (useTimer && gameStarted && !paused && !matchFinished);
+
+        if (useTimer && gameStarted && !paused && !matchFinished) {
+            paused = true;
+            lastTick = System.currentTimeMillis();
+            refresh();
+        }
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(20), dp(7), dp(20), 0);
+        box.setPadding(dp(20), dp(7), dp(20), dp(12));
+        scroll.addView(box);
 
         EditText p1 = field(player1, false);
         EditText p2 = field(player2, false);
@@ -1288,11 +1334,11 @@ public class MainActivity extends Activity {
         CheckBox timerOption = new CheckBox(this);
         timerOption.setText("Usar cronómetro");
         timerOption.setTextSize(16);
-        timerOption.setChecked(useTimer);
+        timerOption.setChecked(false);
         timerOption.setPadding(0, dp(8), 0, dp(4));
 
-        time.setEnabled(useTimer);
-        time.setAlpha(useTimer ? 1f : .45f);
+        time.setEnabled(false);
+        time.setAlpha(.45f);
 
         timerOption.setOnCheckedChangeListener((buttonView, isChecked) -> {
             time.setEnabled(isChecked);
@@ -1309,12 +1355,20 @@ public class MainActivity extends Activity {
         box.addView(dialogLabel("Segundos por tiro"));
         box.addView(time);
 
+        final boolean[] prepared = {false};
+
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Nuevo partido")
-                .setView(box)
+                .setView(scroll)
                 .setNegativeButton("Cancelar", null)
                 .setPositiveButton("Preparar", null)
                 .create();
+
+        dialog.setOnDismissListener(v -> {
+            if (!prepared[0]) {
+                resumeTimerAfterNewGameCancel(resumeAfterCancel);
+            }
+        });
 
         dialog.setOnShowListener(v ->
                 dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v2 -> {
@@ -1324,6 +1378,7 @@ public class MainActivity extends Activity {
                         int newTarget = Integer.parseInt(distance.getText().toString().trim());
                         boolean newUseTimer = timerOption.isChecked();
                         int newTime = shotSeconds;
+
                         if (newUseTimer) {
                             newTime = Integer.parseInt(time.getText().toString().trim());
                         }
@@ -1333,6 +1388,7 @@ public class MainActivity extends Activity {
 
                         target = Math.max(1, Math.min(999, newTarget));
                         useTimer = newUseTimer;
+
                         if (newUseTimer) {
                             shotSeconds = Math.max(5, Math.min(300, newTime));
                         }
@@ -1361,10 +1417,15 @@ public class MainActivity extends Activity {
                         lastPersistentCore = "";
                         lastPersistedSeconds = -1;
 
+                        prepared[0] = true;
                         refresh();
                         dialog.dismiss();
                     } catch (Throwable ignored) {
-                        Toast.makeText(this, "Revisa la distancia y el tiempo", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(
+                                this,
+                                "Revisa la distancia y el tiempo",
+                                Toast.LENGTH_SHORT
+                        ).show();
                     }
                 })
         );
