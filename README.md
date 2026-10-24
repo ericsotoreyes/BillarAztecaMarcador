@@ -148,3 +148,10 @@ Cambios exclusivamente visuales sobre Marcothon v1:
 - El texto informativo inferior es más pequeño.
 - El área del video crece de forma adaptativa en pantallas horizontales.
 - El botón **Volver al marcador** también usa un formato más compacto.
+
+
+## Marcothon v12
+
+- En partidas **sin cronómetro**, los indicadores de extensiones de ambos jugadores se ocultan por completo.
+- Ya no aparece el texto **“Sin reloj”**.
+- Si una partida usa cronómetro, los indicadores de extensiones vuelven a mostrarse normalmente.
