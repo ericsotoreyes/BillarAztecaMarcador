@@ -97,3 +97,12 @@ Cambios exclusivamente visuales sobre Marcothon v1:
 - Si se confirma la falta, cambia el turno al rival y reinicia el cronómetro.
 - Si se cancela, el mismo jugador conserva el turno y el cronómetro se reinicia.
 - Las extensiones existentes se respetan: si una extensión estaba activada, el primer cero consume la extensión y la confirmación de falta solo aparece al agotarse el tiempo definitivo.
+
+
+### Ajuste adicional de extensiones automáticas
+
+- Las extensiones ya no necesitan activarse manualmente.
+- Al llegar el reloj a **0**, si el jugador todavía tiene extensiones disponibles, suena un bip, se descuenta automáticamente una extensión y el cronómetro reinicia con el tiempo completo.
+- Esto ocurre con la primera y la segunda extensión.
+- Cuando el jugador ya agotó sus dos extensiones, el siguiente **0** emite el bip fuerte y abre la confirmación de falta por tiempo.
+- Los indicadores de extensión quedan como información de cuántas extensiones restan.
