@@ -2026,13 +2026,61 @@ public class MainActivity extends ComponentActivity {
         note.setGravity(Gravity.CENTER);
         box.addView(note);
 
+        Button speedButton = styledButton(
+                "Velocidad 1×",
+                LIGHT,
+                Color.rgb(14, 21, 29),
+                13
+        );
+
+        LinearLayout.LayoutParams speedParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(42)
+        );
+        speedParams.setMargins(dp(8), dp(5), dp(8), dp(4));
+        box.addView(speedButton, speedParams);
+
         final int[] index = {0};
+        final float[] playbackSpeed = {1.0f};
+        final android.media.MediaPlayer[] activePlayer = {null};
+
+        speedButton.setOnClickListener(v -> {
+            playbackSpeed[0] = playbackSpeed[0] == 1.0f ? 0.5f : 1.0f;
+            speedButton.setText(
+                    playbackSpeed[0] == 0.5f
+                            ? "Velocidad 0.5×"
+                            : "Velocidad 1×"
+            );
+
+            if (activePlayer[0] != null) {
+                try {
+                    activePlayer[0].setPlaybackParams(
+                            activePlayer[0]
+                                    .getPlaybackParams()
+                                    .setSpeed(playbackSpeed[0])
+                    );
+                } catch (Throwable ignored) {
+                    Toast.makeText(
+                            MainActivity.this,
+                            "Este dispositivo no permite cambiar la velocidad",
+                            Toast.LENGTH_SHORT
+                    ).show();
+                }
+            }
+        });
 
         controls.setPrevNextListeners(
                 v -> {
                     if (index[0] < files.size() - 1) {
                         index[0]++;
-                        playReplayFile(video, status, files, index);
+                        playReplayFile(
+                                video,
+                                status,
+                                files,
+                                index,
+                                playbackSpeed,
+                                activePlayer
+                        );
                     } else {
                         Toast.makeText(
                                 MainActivity.this,
@@ -2044,7 +2092,14 @@ public class MainActivity extends ComponentActivity {
                 v -> {
                     if (index[0] > 0) {
                         index[0]--;
-                        playReplayFile(video, status, files, index);
+                        playReplayFile(
+                                video,
+                                status,
+                                files,
+                                index,
+                                playbackSpeed,
+                                activePlayer
+                        );
                     } else {
                         Toast.makeText(
                                 MainActivity.this,
@@ -2062,7 +2117,14 @@ public class MainActivity extends ComponentActivity {
                 .create();
 
         dialog.setOnShowListener(v ->
-                playReplayFile(video, status, files, index));
+                playReplayFile(
+                        video,
+                        status,
+                        files,
+                        index,
+                        playbackSpeed,
+                        activePlayer
+                ));
 
         dialog.setOnDismissListener(v -> endReplayReview());
         dialog.show();
@@ -2072,7 +2134,9 @@ public class MainActivity extends ComponentActivity {
             VideoView video,
             TextView status,
             List<File> files,
-            int[] index
+            int[] index,
+            float[] playbackSpeed,
+            android.media.MediaPlayer[] activePlayer
     ) {
         if (index[0] < 0 || index[0] >= files.size()) return;
 
@@ -2083,12 +2147,33 @@ public class MainActivity extends ComponentActivity {
         );
 
         video.setVideoURI(Uri.fromFile(file));
-        video.setOnPreparedListener(mediaPlayer -> video.start());
+        video.setOnPreparedListener(mediaPlayer -> {
+            activePlayer[0] = mediaPlayer;
+
+            try {
+                mediaPlayer.setPlaybackParams(
+                        mediaPlayer
+                                .getPlaybackParams()
+                                .setSpeed(playbackSpeed[0])
+                );
+            } catch (Throwable ignored) {
+            }
+
+            video.start();
+        });
+
         video.setOnCompletionListener(mediaPlayer -> {
             index[0]++;
 
             if (index[0] < files.size()) {
-                playReplayFile(video, status, files, index);
+                playReplayFile(
+                        video,
+                        status,
+                        files,
+                        index,
+                        playbackSpeed,
+                        activePlayer
+                );
             } else {
                 status.setText("Repetición terminada");
             }
