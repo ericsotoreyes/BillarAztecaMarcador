@@ -138,3 +138,13 @@ Cambios exclusivamente visuales sobre Marcothon v1:
 - La altura del video se adapta a la pantalla para evitar que los controles queden fuera de la ventana.
 - Anterior y Siguiente cambian realmente entre fragmentos temporales.
 - La velocidad elegida se conserva al cambiar entre fragmentos.
+
+
+## Marcothon v11
+
+- La ventana de repetición prioriza el área de video.
+- Se reducen márgenes, textos y altura de los controles superiores.
+- Los botones **Anterior**, **Velocidad** y **Siguiente** usan tipografía y altura más compactas.
+- El texto informativo inferior es más pequeño.
+- El área del video crece de forma adaptativa en pantallas horizontales.
+- El botón **Volver al marcador** también usa un formato más compacto.
