@@ -232,3 +232,18 @@ oclusiones, luz/reflejos, los dos jugadores, fin de turno, pausa/repetición y e
 - En modo cámara no reinician el reloj; el cambio de turno sigue siendo manual.
 - Si una suma alcanza la distancia configurada, se limita a esa distancia y finaliza la partida.
 - Aplicación independiente `com.clubmarcothon.marcador.v15`; no modifica versiones anteriores.
+
+
+## Marcothon v16 — comprobante discreto de la última serie
+
+- Dentro del área del número grande aparece una línea pequeña (9 sp), gris, centrada abajo:
+  **12 + 8 = 20**. No añade filas, reduce el número principal ni desplaza los controles.
+- Acumula todas las pulsaciones +1/+3/+5 de la serie. El total grande se actualiza normalmente.
+- Al terminar turno se conserva el desglose del jugador saliente mientras tira el rival.
+- Al comenzar el siguiente turno de ese jugador, las carambolas se integran al acumulado
+  y su línea se limpia. No se muestra una suma de cero.
+- −1 y Deshacer actualizan/restauran también el desglose; Deshacer fin de turno restaura
+  los comprobantes que estaban visibles antes del cambio de jugador.
+- La recuperación de partida guarda las dos bases de turno; Nuevo partido las borra.
+- Conserva la cámara, el cronómetro y las repeticiones de v15.
+- Aplicación independiente `com.clubmarcothon.marcador.v16`; versiones anteriores intactas.

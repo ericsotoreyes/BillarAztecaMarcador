@@ -36,6 +36,7 @@ import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageView;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.MediaController;
 import android.widget.ScrollView;
@@ -98,6 +99,8 @@ public class MainActivity extends ComponentActivity {
     private TextView active2View;
     private TextView score1View;
     private TextView score2View;
+    private TextView scoreBreakdown1View;
+    private TextView scoreBreakdown2View;
     private TextView avg1View;
     private TextView avg2View;
     private TextView run1View;
@@ -164,6 +167,9 @@ public class MainActivity extends ComponentActivity {
 
     private int score1 = 0;
     private int score2 = 0;
+    // Totals at the start of each player's latest turn; retained during the rival's turn.
+    private int turnBase1 = 0;
+    private int turnBase2 = 0;
     private int innings1 = 1;
     private int innings2 = 0;
     private int maxRun1 = 0;
@@ -470,7 +476,19 @@ public class MainActivity extends ComponentActivity {
         score.setAutoSizeTextTypeUniformWithConfiguration(
                 64, 112, 1, TypedValue.COMPLEX_UNIT_SP
         );
-        panel.addView(score, new LinearLayout.LayoutParams(
+        // Overlay the tiny receipt in the existing score area: no new row and no
+        // change to the main number's size, bounds, or the surrounding controls.
+        FrameLayout scoreArea = new FrameLayout(this);
+        scoreArea.addView(score, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        TextView breakdown = text("", 9, MUTED, false);
+        breakdown.setGravity(Gravity.CENTER);
+        breakdown.setSingleLine(true);
+        breakdown.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        FrameLayout.LayoutParams breakdownParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, dp(12), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        scoreArea.addView(breakdown, breakdownParams);
+        panel.addView(scoreArea, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
         LinearLayout stats = new LinearLayout(this);
@@ -533,6 +551,7 @@ public class MainActivity extends ComponentActivity {
             active1View = active;
             extension1Button = extension;
             score1View = score;
+            scoreBreakdown1View = breakdown;
             avg1View = avg;
             run1View = run;
         } else {
@@ -540,6 +559,7 @@ public class MainActivity extends ComponentActivity {
             active2View = active;
             extension2Button = extension;
             score2View = score;
+            scoreBreakdown2View = breakdown;
             avg2View = avg;
             run2View = run;
         }
@@ -747,6 +767,8 @@ public class MainActivity extends ComponentActivity {
 
         score1View.setText(String.valueOf(score1));
         score2View.setText(String.valueOf(score2));
+        updateScoreBreakdown(scoreBreakdown1View, turnBase1, score1);
+        updateScoreBreakdown(scoreBreakdown2View, turnBase2, score2);
 
         avg1View.setText(String.format(
                 Locale.US, "%.3f",
@@ -841,6 +863,16 @@ public class MainActivity extends ComponentActivity {
         savePersistentState(false);
     }
 
+    private void updateScoreBreakdown(TextView view, int base, int total) {
+        int added = total - base;
+        String receipt = added > 0 ? base + " + " + added + " = " + total : "";
+        view.setText(receipt);
+        view.setVisibility(added > 0 ? View.VISIBLE : View.INVISIBLE);
+        view.setContentDescription(added > 0
+                ? base + " carambolas anteriores, más " + added + " de esta serie, total " + total
+                : null);
+    }
+
     private void updateExtensionButton(Button button, int player, int remaining) {
         if (button == null) return;
 
@@ -926,9 +958,11 @@ public class MainActivity extends ComponentActivity {
 
         if (player == 1) {
             score1--;
+            turnBase1 = Math.min(turnBase1, score1);
             if (currentPlayer == 1 && currentRun > 0) currentRun--;
         } else {
             score2--;
+            turnBase2 = Math.min(turnBase2, score2);
             if (currentPlayer == 2 && currentRun > 0) currentRun--;
         }
 
@@ -949,9 +983,11 @@ public class MainActivity extends ComponentActivity {
         if (currentPlayer == 1) {
             currentPlayer = 2;
             innings2++;
+            turnBase2 = score2;
         } else {
             currentPlayer = 1;
             innings1++;
+            turnBase1 = score1;
         }
 
         resetTimerInternal();
@@ -1177,6 +1213,10 @@ public class MainActivity extends ComponentActivity {
             maxRun2 = p.getInt("maxRun2", 0);
             currentRun = p.getInt("currentRun", 0);
             currentPlayer = p.getInt("currentPlayer", 1);
+            turnBase1 = Math.max(0, Math.min(score1, p.getInt("turnBase1",
+                    currentPlayer == 1 ? score1 - currentRun : score1)));
+            turnBase2 = Math.max(0, Math.min(score2, p.getInt("turnBase2",
+                    currentPlayer == 2 ? score2 - currentRun : score2)));
             target = p.getInt("target", 30);
             shotSeconds = p.getInt("shotSeconds", 40);
             secondsLeft = p.getInt("secondsLeft", shotSeconds);
@@ -1231,6 +1271,8 @@ public class MainActivity extends ComponentActivity {
         player2 = "Jugador 2";
         score1 = 0;
         score2 = 0;
+        turnBase1 = 0;
+        turnBase2 = 0;
         innings1 = 1;
         innings2 = 0;
         maxRun1 = 0;
@@ -1261,6 +1303,8 @@ public class MainActivity extends ComponentActivity {
                 player2 + "\u0001" +
                 score1 + "\u0001" +
                 score2 + "\u0001" +
+                turnBase1 + "\u0001" +
+                turnBase2 + "\u0001" +
                 innings1 + "\u0001" +
                 innings2 + "\u0001" +
                 maxRun1 + "\u0001" +
@@ -1328,6 +1372,8 @@ public class MainActivity extends ComponentActivity {
                 .putString("player2", player2)
                 .putInt("score1", score1)
                 .putInt("score2", score2)
+                .putInt("turnBase1", turnBase1)
+                .putInt("turnBase2", turnBase2)
                 .putInt("innings1", innings1)
                 .putInt("innings2", innings2)
                 .putInt("maxRun1", maxRun1)
@@ -1554,6 +1600,8 @@ public class MainActivity extends ComponentActivity {
 
                         score1 = 0;
                         score2 = 0;
+                        turnBase1 = 0;
+                        turnBase2 = 0;
                         innings1 = 1;
                         innings2 = 0;
                         maxRun1 = 0;
@@ -1618,6 +1666,7 @@ public class MainActivity extends ComponentActivity {
         history.push(new State(
                 player1, player2,
                 score1, score2,
+                turnBase1, turnBase2,
                 innings1, innings2,
                 maxRun1, maxRun2,
                 currentRun, currentPlayer,
@@ -1643,6 +1692,8 @@ public class MainActivity extends ComponentActivity {
         player2 = s.player2;
         score1 = s.score1;
         score2 = s.score2;
+        turnBase1 = s.turnBase1;
+        turnBase2 = s.turnBase2;
         innings1 = s.innings1;
         innings2 = s.innings2;
         maxRun1 = s.maxRun1;
@@ -2914,6 +2965,8 @@ public class MainActivity extends ComponentActivity {
         final String player2;
         final int score1;
         final int score2;
+        final int turnBase1;
+        final int turnBase2;
         final int innings1;
         final int innings2;
         final int maxRun1;
@@ -2935,6 +2988,8 @@ public class MainActivity extends ComponentActivity {
                 String player2,
                 int score1,
                 int score2,
+                int turnBase1,
+                int turnBase2,
                 int innings1,
                 int innings2,
                 int maxRun1,
@@ -2955,6 +3010,8 @@ public class MainActivity extends ComponentActivity {
             this.player2 = player2;
             this.score1 = score1;
             this.score2 = score2;
+            this.turnBase1 = turnBase1;
+            this.turnBase2 = turnBase2;
             this.innings1 = innings1;
             this.innings2 = innings2;
             this.maxRun1 = maxRun1;
