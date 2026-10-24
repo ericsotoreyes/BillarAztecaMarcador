@@ -106,3 +106,10 @@ Cambios exclusivamente visuales sobre Marcothon v1:
 - Esto ocurre con la primera y la segunda extensión.
 - Cuando el jugador ya agotó sus dos extensiones, el siguiente **0** emite el bip fuerte y abre la confirmación de falta por tiempo.
 - Los indicadores de extensión quedan como información de cuántas extensiones restan.
+
+
+### Ajuste visual para partidas sin cronómetro
+
+- Cuando una partida se configura **sin cronómetro**, el reloj desaparece completamente del área central.
+- En su lugar se muestra el **logo de Club Billar Marcothon** ocupando el mismo espacio.
+- Si la partida usa cronómetro, el logo se oculta y se muestra el reloj normalmente.
