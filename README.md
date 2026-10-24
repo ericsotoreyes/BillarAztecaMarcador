@@ -122,3 +122,10 @@ Cambios exclusivamente visuales sobre Marcothon v1:
 - Al llegar al primer o último fragmento se muestra un aviso y se mantiene el clip actual.
 - La reproducción automática sigue avanzando al siguiente fragmento cuando termina el actual.
 - La barra de progreso y reproducir/pausa siguen actuando sobre el fragmento actual.
+
+
+### Reproducción a cámara lenta
+
+- La ventana de **Repetición instantánea** incorpora un botón de velocidad.
+- El botón alterna entre **1×** y **0.5×**.
+- La velocidad elegida se conserva al pasar al fragmento anterior o siguiente y durante el avance automático entre fragmentos.
