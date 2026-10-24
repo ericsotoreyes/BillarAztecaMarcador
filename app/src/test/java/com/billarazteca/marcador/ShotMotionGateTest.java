@@ -64,6 +64,13 @@ public class ShotMotionGateTest {
         ShotMotionGate next=new ShotMotionGate();
         for(long t=2200;t<=5000;t+=100)assertFalse(next.update(balls(.4),t).resetClock);
     }
+    @Test public void visibleRollingAfterBriefOcclusionStillCountsAsObservedShot() {
+        ShotMotionGate g=new ShotMotionGate();feed(g,balls(.2),0,2000);
+        g.update(null,2100);g.update(balls(.3),2200);
+        assertEquals(ShotMotionGate.State.MOVING,g.update(balls(.4),2300).state);
+        for(long t=2400;t<4300;t+=100)assertFalse(g.update(balls(.4),t).resetClock);
+        assertTrue(g.update(balls(.4),4300).resetClock);
+    }
     @Test public void twoWhiteBallsCanExchangeDetectionOrder() {
         ShotMotionGate g=new ShotMotionGate();
         TableBallDetector.Ball[] a={ball(1,.2,.3),ball(1,.5,.6),ball(3,.8,1.5)};

@@ -114,7 +114,7 @@ public class MainActivity extends ComponentActivity {
     private Button replayButton;
     private Button cameraClockButton;
     private boolean cameraClockEnabled = false;
-    private boolean cameraSetupOpen = false;
+    private volatile boolean cameraSetupOpen = false;
     private boolean cameraSetupRequested = false;
     private boolean foreground = true;
     private boolean cameraClockHold = true;
@@ -239,6 +239,7 @@ public class MainActivity extends ComponentActivity {
         if (cameraSetupOpen) {
             // A backgrounded calibration cannot be trusted after returning.
             calibratedTable = null;
+            if (calibrationView != null) calibrationView.reset();
         }
         refresh();
         stopReplayCapture();
@@ -1753,6 +1754,7 @@ public class MainActivity extends ComponentActivity {
 
     private void analyzeClockFrame(ImageProxy image, int generation) {
         try {
+            if (visionSession == null && !cameraSetupOpen) return;
             long now = SystemClock.elapsedRealtime();
             // Throttle to 15 fps without blocking CameraX or the UI thread.
             if (now - lastAnalyzedFrame < 65) return;

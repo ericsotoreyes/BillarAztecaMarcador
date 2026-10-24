@@ -16,6 +16,7 @@ final class ShotMotionGate {
     private long stillSince = -1;
     private long lastAt = -1;
     private boolean shot;
+    private boolean armed;
 
     Result update(TableBallDetector.Ball[] balls, long now) {
         // Never award a reset across a missing-camera interval. A new session reacquires
@@ -39,7 +40,7 @@ final class ShotMotionGate {
             return new Result(state, false);
         }
         if (hasMoved(anchor, balls)) {
-            if (state == State.READY) shot = true;
+            if (armed) shot = true;
             anchor = balls;
             stillSince = now;
             state = shot ? State.MOVING : State.ACQUIRING;
@@ -49,6 +50,7 @@ final class ShotMotionGate {
             boolean reset = shot;
             shot = false;
             state = State.READY;
+            armed = true;
             // Keep the stationary anchor, so very slow cumulative movement is seen.
             return new Result(state, reset);
         }
