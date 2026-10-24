@@ -144,6 +144,14 @@ public class MainActivity extends ComponentActivity {
     private ProcessCameraProvider replayCameraProvider;
     private VideoCapture<Recorder> replayVideoCapture;
     private Recording replayRecording;
+    private final ExecutorService replayFileExecutor = Executors.newSingleThreadExecutor();
+    private File activeReplayFile;
+    private int replayBufferEpoch = 0;
+    private long replayRecordingToken = 0;
+    private long replayStartedAt = 0;
+    private boolean replayFinalizing = false;
+    private int replayFailures = 0;
+    private String replayLastProblem = "";
     private boolean replayCaptureDesired = false;
     private boolean replayPlaybackOpen = false;
     private boolean replayOptionsPending = false;
@@ -295,6 +303,10 @@ public class MainActivity extends ComponentActivity {
         cameraGeneration++;
         if (clockAnalysis != null) clockAnalysis.clearAnalyzer();
         visionExecutor.shutdownNow();
+        handler.removeCallbacks(replayStartTimeout);
+        handler.removeCallbacks(recoverReplayRunnable);
+        // Finish any already queued MP4 checks; their callbacks discard files after destruction.
+        replayFileExecutor.shutdown();
         super.onDestroy();
     }
 
@@ -1807,7 +1819,7 @@ public class MainActivity extends ComponentActivity {
 
     private boolean rebindPending = false;
     private void rebindAfterRecording() {
-        if (replayRecording != null) {
+        if (replayRecording != null || replayFinalizing) {
             rebindPending = true;
             stopReplayCapture();
         } else {
@@ -1927,6 +1939,7 @@ public class MainActivity extends ComponentActivity {
         if (!gameStarted || matchFinished || replayPlaybackOpen) return;
 
         replayCaptureDesired = true;
+        if (!foreground || cameraSetupOpen || replayFinalizing) return;
 
         if (!hasCameraPermission()) {
             requestReplayCameraPermission();
@@ -2018,7 +2031,7 @@ public class MainActivity extends ComponentActivity {
             int generation = ++cameraGeneration;
             invalidateVision();
             Recorder.Builder recorderBuilder = new Recorder.Builder();
-            if (cameraClockEnabled || cameraSetupOpen) {
+            if (cameraClockEnabled || cameraSetupOpen || replayFailures > 0) {
                 recorderBuilder.setQualitySelector(QualitySelector.from(Quality.SD,
                         FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)));
             }
@@ -2084,98 +2097,162 @@ public class MainActivity extends ComponentActivity {
     }
 
     private void startReplaySegment() {
-        if (!replayCaptureDesired ||
-                replayPlaybackOpen ||
-                replayVideoCapture == null ||
-                replayRecording != null ||
-                !gameStarted ||
-                matchFinished) {
-            return;
-        }
+        if (!replayCaptureDesired || !foreground || cameraSetupOpen || replayFinalizing ||
+                replayPlaybackOpen || replayVideoCapture == null || replayRecording != null ||
+                !gameStarted || matchFinished) return;
 
         File directory = new File(getCacheDir(), "instant_replay");
         if (!directory.exists() && !directory.mkdirs()) {
+            replayLastProblem = "No se pudo crear la carpeta temporal del video. Comprueba el almacenamiento libre.";
             replayCaptureDesired = false;
             return;
         }
-
-        final File segmentFile = new File(
-                directory,
-                "segment_" + System.currentTimeMillis() + ".mp4"
-        );
-
-        FileOutputOptions outputOptions =
-                new FileOutputOptions.Builder(segmentFile).build();
-
+        final File segmentFile = new File(directory, "segment_" + System.nanoTime() + ".mp4");
+        final int bufferEpoch = replayBufferEpoch;
+        final long token = ++replayRecordingToken;
+        activeReplayFile = segmentFile;
+        replayStartedAt = 0;
+        FileOutputOptions outputOptions = new FileOutputOptions.Builder(segmentFile).build();
         try {
-            replayRecording = replayVideoCapture
-                    .getOutput()
-                    .prepareRecording(this, outputOptions)
-                    .start(
-                            ContextCompat.getMainExecutor(this),
-                            event -> {
-                                if (!(event instanceof VideoRecordEvent.Finalize)) {
-                                    return;
-                                }
-
-                                handler.removeCallbacks(rotateReplayRunnable);
-                                replayRecording = null;
-
-                                VideoRecordEvent.Finalize finalized =
-                                        (VideoRecordEvent.Finalize) event;
-
-                                if (!finalized.hasError() &&
-                                        segmentFile.exists() &&
-                                        segmentFile.length() > 0) {
-                                    addReplaySegment(segmentFile);
-                                } else {
-                                    try {
-                                        segmentFile.delete();
-                                    } catch (Throwable ignored) {
-                                    }
-                                }
-
-                                if (rebindPending) {
-                                    rebindPending = false;
-                                    if (foreground) {
-                                        bindReplayCamera();
-                                        if (gameStarted && !matchFinished && !cameraSetupOpen) startReplayCaptureIfReady();
-                                    }
-                                    return;
-                                }
-
-                                if (replayOptionsPending) {
-                                    replayOptionsPending = false;
-                                    handler.post(this::showReplayOptionsDialog);
-                                    return;
-                                }
-
-                                if (replayCaptureDesired &&
-                                        !replayPlaybackOpen &&
-                                        gameStarted &&
-                                        !matchFinished) {
-                                    handler.post(this::startReplaySegment);
-                                }
-                            }
-                    );
-
-            handler.postDelayed(rotateReplayRunnable, REPLAY_SEGMENT_MS);
+            replayRecording = replayVideoCapture.getOutput().prepareRecording(this, outputOptions)
+                    .start(ContextCompat.getMainExecutor(this), event -> {
+                        if (token != replayRecordingToken) return;
+                        if (event instanceof VideoRecordEvent.Start) {
+                            replayStartedAt = SystemClock.elapsedRealtime();
+                            handler.removeCallbacks(replayStartTimeout);
+                            // Rotate from the actual first recording event, not from camera setup.
+                            handler.postDelayed(rotateReplayRunnable, REPLAY_SEGMENT_MS);
+                            return;
+                        }
+                        if (!(event instanceof VideoRecordEvent.Finalize)) return;
+                        handler.removeCallbacks(rotateReplayRunnable);
+                        handler.removeCallbacks(replayStartTimeout);
+                        replayRecording = null;
+                        replayStartedAt = 0;
+                        replayFinalizing = true;
+                        if (replayFileExecutor.isShutdown() || isFinishing() || isDestroyed()) {
+                            replayFinalizing = false;
+                            activeReplayFile = null;
+                            segmentFile.delete();
+                            return;
+                        }
+                        VideoRecordEvent.Finalize result = (VideoRecordEvent.Finalize) event;
+                        // CameraX can produce a playable file even with SOURCE_INACTIVE or
+                        // a recording limit. Inspect the MP4 instead of deleting all error files.
+                        replayFileExecutor.execute(() -> {
+                            boolean playable = hasPlayableReplayVideo(segmentFile);
+                            handler.post(() -> finishReplaySegment(segmentFile, bufferEpoch,
+                                    result.getError(), playable));
+                        });
+                    });
+            handler.postDelayed(replayStartTimeout, 10_000L);
         } catch (Throwable error) {
             replayRecording = null;
-            replayCaptureDesired = false;
-
-            try {
-                segmentFile.delete();
-            } catch (Throwable ignored) {
-            }
-
-            Toast.makeText(
-                    this,
-                    "No se pudo iniciar la grabación temporal",
-                    Toast.LENGTH_SHORT
-            ).show();
+            replayStartedAt = 0;
+            activeReplayFile = null;
+            replayFailures++;
+            replayLastProblem = "La cámara no pudo iniciar la grabación de video.";
+            segmentFile.delete();
+            scheduleReplayRecovery();
         }
     }
+
+    private final Runnable replayStartTimeout = () -> {
+        if (replayRecording != null && replayStartedAt == 0) {
+            replayLastProblem = "La cámara tardó demasiado en empezar a enviar video.";
+            try { replayRecording.stop(); } catch (RuntimeException ignored) { }
+        }
+    };
+
+    private boolean hasPlayableReplayVideo(File file) {
+        if (!file.isFile() || file.length() == 0) return false;
+        android.media.MediaExtractor extractor = new android.media.MediaExtractor();
+        try {
+            extractor.setDataSource(file.getAbsolutePath());
+            for (int i = 0; i < extractor.getTrackCount(); i++) {
+                android.media.MediaFormat format = extractor.getTrackFormat(i);
+                String mime = format.getString(android.media.MediaFormat.KEY_MIME);
+                if (mime != null && mime.startsWith("video/")) {
+                    extractor.selectTrack(i);
+                    // At least one encoded sample must exist; a nonempty MP4 header isn't video.
+                    return extractor.getSampleTime() >= 0;
+                }
+            }
+        } catch (Exception ignored) {
+        } finally {
+            extractor.release();
+        }
+        return false;
+    }
+
+    private void finishReplaySegment(File file, int bufferEpoch, int error, boolean playable) {
+        replayFinalizing = false;
+        activeReplayFile = null;
+        boolean currentBuffer = bufferEpoch == replayBufferEpoch;
+        if (playable && currentBuffer && !isFinishing() && !isDestroyed()) {
+            addReplaySegment(file);
+            replayFailures = 0;
+            replayLastProblem = "";
+        } else {
+            file.delete();
+            if (currentBuffer && !playable) {
+                replayFailures++;
+                replayLastProblem = replayErrorDescription(error);
+            }
+        }
+        if (isFinishing() || isDestroyed()) return;
+        if (rebindPending) {
+            rebindPending = false;
+            if (foreground) {
+                bindReplayCamera();
+                if (gameStarted && !matchFinished && !cameraSetupOpen) startReplayCaptureIfReady();
+            }
+            return;
+        }
+        if (replayOptionsPending && replayPlaybackOpen) {
+            replayOptionsPending = false;
+            showReplayOptionsDialog();
+            return;
+        }
+        if (playable || !currentBuffer) {
+            if (replayCaptureDesired && foreground && !replayPlaybackOpen && !cameraSetupOpen
+                    && gameStarted && !matchFinished) handler.post(this::startReplaySegment);
+        } else {
+            scheduleReplayRecovery();
+        }
+    }
+
+    private String replayErrorDescription(int error) {
+        switch (error) {
+            case VideoRecordEvent.Finalize.ERROR_NONE:
+                return "La cámara no guardó ninguna imagen de video en este fragmento.";
+            case VideoRecordEvent.Finalize.ERROR_SOURCE_INACTIVE:
+                return "La cámara dejó de enviar imágenes y no se guardó un fragmento reproducible.";
+            case VideoRecordEvent.Finalize.ERROR_NO_VALID_DATA:
+                return "La grabación terminó sin recibir fotogramas de video válidos.";
+            case VideoRecordEvent.Finalize.ERROR_INSUFFICIENT_STORAGE:
+                return "No hay suficiente espacio libre para guardar el video temporal.";
+            case VideoRecordEvent.Finalize.ERROR_ENCODING_FAILED:
+            case VideoRecordEvent.Finalize.ERROR_RECORDER_ERROR:
+                return "El dispositivo no pudo codificar el video. Se intentará una calidad más compatible.";
+            default:
+                return "No se pudo guardar un fragmento de video reproducible (código " + error + ").";
+        }
+    }
+
+    private void scheduleReplayRecovery() {
+        if (replayFailures >= 3) return;
+        handler.removeCallbacks(recoverReplayRunnable);
+        handler.postDelayed(recoverReplayRunnable, 1200L);
+    }
+
+    private final Runnable recoverReplayRunnable = () -> {
+        if (!foreground || !replayCaptureDesired || replayPlaybackOpen || cameraSetupOpen ||
+                replayRecording != null || replayFinalizing || !gameStarted || matchFinished) return;
+        // Re-create a failed recorder; retries use SD as a compatibility fallback.
+        replayVideoCapture = null;
+        bindReplayCamera();
+    };
 
     private void addReplaySegment(File file) {
         replaySegments.addLast(file);
@@ -2193,6 +2270,8 @@ public class MainActivity extends ComponentActivity {
     private void stopReplayCapture() {
         replayCaptureDesired = false;
         handler.removeCallbacks(rotateReplayRunnable);
+        handler.removeCallbacks(recoverReplayRunnable);
+        handler.removeCallbacks(replayStartTimeout);
 
         if (replayRecording != null) {
             try {
@@ -2203,6 +2282,9 @@ public class MainActivity extends ComponentActivity {
     }
 
     private void clearReplayBuffer() {
+        replayBufferEpoch++;
+        replayFailures = 0;
+        replayLastProblem = "";
         replayOptionsPending = false;
 
         while (!replaySegments.isEmpty()) {
@@ -2224,6 +2306,7 @@ public class MainActivity extends ComponentActivity {
         if (files == null) return;
 
         for (File file : files) {
+            if (file.equals(activeReplayFile)) continue;
             try {
                 file.delete();
             } catch (Throwable ignored) {
@@ -2243,6 +2326,26 @@ public class MainActivity extends ComponentActivity {
 
         if (!hasCameraPermission()) {
             requestReplayCameraPermission();
+            return;
+        }
+
+        ReplayAvailability.Action availability = ReplayAvailability.onRequest(
+                replaySegments.size(), replayRecording != null, replayStartedAt,
+                SystemClock.elapsedRealtime(), replayFinalizing);
+        if (availability == ReplayAvailability.Action.WAIT) {
+            Toast.makeText(this, replayFinalizing ? "Guardando el fragmento de video… Intenta de nuevo en un momento."
+                    : "La cámara está iniciando la grabación. Espera unos segundos sin salir de la app.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (availability == ReplayAvailability.Action.RETRY) {
+            String problem = replayLastProblem.isEmpty()
+                    ? "La cámara aún no ha empezado a guardar video." : replayLastProblem;
+            new AlertDialog.Builder(this).setTitle("Repetición no disponible")
+                    .setMessage(problem + "\n\nSe reiniciará la grabación. Mantén la app abierta unos 10 segundos y vuelve a tocar Repetición.")
+                    .setPositiveButton("Entendido", null).show();
+            replayFailures = 0;
+            replayVideoCapture = null;
+            startReplayCaptureIfReady();
             return;
         }
 
@@ -2271,6 +2374,8 @@ public class MainActivity extends ComponentActivity {
                 replayOptionsPending = false;
                 showReplayOptionsDialog();
             }
+        } else if (replayFinalizing) {
+            replayOptionsPending = true;
         } else {
             showReplayOptionsDialog();
         }
@@ -2280,11 +2385,11 @@ public class MainActivity extends ComponentActivity {
         if (!replayPlaybackOpen) return;
 
         if (replaySegments.isEmpty()) {
-            Toast.makeText(
-                    this,
-                    "Todavía no hay video suficiente para repetir",
-                    Toast.LENGTH_SHORT
-            ).show();
+            String problem = replayLastProblem.isEmpty()
+                    ? "Todavía no se ha guardado un fragmento reproducible. Deja la partida iniciada unos 10 segundos sin salir de la app."
+                    : replayLastProblem;
+            new AlertDialog.Builder(this).setTitle("Repetición no disponible")
+                    .setMessage(problem).setPositiveButton("Entendido", null).show();
             endReplayReview();
             return;
         }

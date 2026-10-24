@@ -247,3 +247,23 @@ oclusiones, luz/reflejos, los dos jugadores, fin de turno, pausa/repetición y e
 - La recuperación de partida guarda las dos bases de turno; Nuevo partido las borra.
 - Conserva la cámara, el cronómetro y las repeticiones de v15.
 - Aplicación independiente `com.clubmarcothon.marcador.v16`; versiones anteriores intactas.
+
+
+## Marcothon v17 — disponibilidad y recuperación de repetición
+
+- Tocar Repetición mientras la cámara está arrancando ya no detiene una grabación sin datos.
+- Los 10 s de cada fragmento se cuentan desde VideoRecordEvent.Start.
+- Cada MP4 se valida en segundo plano buscando una pista de video con una muestra codificada.
+  Se conserva un archivo reproducible incluso si CameraX informa SOURCE_INACTIVE u otro aviso.
+- Se espera a que termine la validación antes de declarar vacío el historial o abrir el reproductor.
+- Los fragmentos de un partido anterior no pueden reaparecer al finalizar tarde una grabación.
+- Al fallar se recrea el grabador con calidad SD, hasta tres intentos con pausa entre ellos.
+- Si no hay video se explica el motivo concreto (inicio, datos, almacenamiento, cámara o codificador),
+  y tocar Repetición vuelve a intentar iniciar la grabación.
+- Conserva el cronómetro con cámara, +3/+5 y el comprobante de serie.
+- APK independiente `com.clubmarcothon.marcador.v17`; ramas anteriores intactas.
+
+Comprobar en dispositivo: iniciar partida, mantener abierta 10–15 s, abrir Repetición; repetir
+con y sin reloj automático, durante el primer segundo, al cambiar de partido y tras volver
+al primer plano. Las pruebas de JVM cubren la disponibilidad durante inicio/finalización;
+la compatibilidad real de cámara/codificador requiere el dispositivo.
