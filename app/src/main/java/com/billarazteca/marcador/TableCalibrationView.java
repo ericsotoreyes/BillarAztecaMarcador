@@ -45,7 +45,7 @@ final class TableCalibrationView extends View {
     String status() {
         if(count<4) return "Esquina " + (count+1) + "/4: lejana izquierda → lejana derecha → cercana derecha → cercana izquierda";
         if(!error.isEmpty()) return error;
-        return balls==null ? "No se distinguen las tres bolas. Ajusta luz/posición o vuelve a marcar la mesa."
+        return balls==null ? "No se distinguen las tres bolas. Marca solo el paño, sin madera ni bandas, y revisa luz/posición."
                 : "Tres bolas detectadas. Comprueba que los círculos rodean las bolas reales.";
     }
     boolean hasFrame() { return bitmap != null && pixels != null; }

@@ -10,7 +10,12 @@ final class TableBallDetector {
         final int color;
         final double x, y, diameter;
         final float imageX, imageY, radius;
+        final int pixelArea;
         Ball(int color, double x, double y, double diameter, float imageX, float imageY, float radius) {
+            this(color,x,y,diameter,imageX,imageY,radius,0);
+        }
+        Ball(int color, double x, double y, double diameter, float imageX, float imageY, float radius, int pixelArea) {
+            this.pixelArea = pixelArea;
             this.color = color; this.x = x; this.y = y; this.diameter = diameter;
             this.imageX = imageX; this.imageY = imageY; this.radius = radius;
         }
@@ -68,7 +73,7 @@ final class TableBallDetector {
                 if (y+1 < height && labels[p+width] == label) { labels[p+width]=0; queue[tail++]=p+width; }
             }
             int bw = maxX-minX+1, bh = maxY-minY+1;
-            if (tail < 5 || tail > rgb.length*.015 || bw < 2 || bh < 2 || bw > bh*3 || bh > bw*3
+            if (tail < 5 || tail > rgb.length*.015 || bw < 2 || bh < 2 || bw > bh*2.2 || bh > bw*2.2
                     || tail < bw*bh*.35) continue;
             float cx = (float)sumX/tail/width, cy = (float)sumY/tail/height;
             double[] center = project(cx, cy);
@@ -77,15 +82,59 @@ final class TableBallDetector {
             double diameter = (distance(left,right) + distance(top,bottom))/2;
             if (!Double.isFinite(diameter) || diameter < .006 || diameter > .15) continue;
             if (minDiameter > 0 && (diameter < minDiameter*.5 || diameter > maxDiameter*1.8)) continue;
-            balls.add(new Ball(label, center[0], center[1], diameter, cx, cy, Math.max(bw,bh)/2f));
-            if (balls.size() > 12) return null;
+            balls.add(new Ball(label, center[0], center[1], diameter, cx, cy, Math.max(bw,bh)/2f, tail));
+            if (balls.size() > 24) return null;
         }
-        if (balls.size() != 3) return null;
-        int[] colors = balls.stream().mapToInt(b -> b.color).sorted().toArray();
-        if (expectedColors != null && !Arrays.equals(colors, expectedColors)) return null;
-        // Accept red + white + yellow, or red + two whites. Other shapes are ambiguous.
-        if (!Arrays.equals(colors,new int[]{1,2,3}) && !Arrays.equals(colors,new int[]{1,1,3})) return null;
-        return balls.toArray(new Ball[0]);
+        return selectBallSet(balls,width,height);
+    }
+
+    private Ball[] selectBallSet(List<Ball> candidates, int width, int height) {
+        List<Ball> filtered = new ArrayList<>();
+        for (Ball ball : candidates) {
+            boolean highlight = false;
+            if (ball.color == 1) {
+                for (Ball colored : candidates) {
+                    if (colored.color == 1 || colored.pixelArea < ball.pixelArea * 2) continue;
+                    double distance = Math.hypot((ball.imageX - colored.imageX) * width,
+                            (ball.imageY - colored.imageY) * height);
+                    // A small white specular region on a red/yellow surface is part of
+                    // that same ball. A separate touching white ball is outside this radius.
+                    if (ball.radius <= colored.radius * .65 && distance <= colored.radius + 1) {
+                        highlight = true;
+                        break;
+                    }
+                }
+            }
+            if (!highlight) filtered.add(ball);
+        }
+        Ball[] best = null;
+        double bestScore = Double.NEGATIVE_INFINITY;
+        double secondScore = Double.NEGATIVE_INFINITY;
+        for (int i=0;i<filtered.size();i++) for (int j=i+1;j<filtered.size();j++)
+            for (int k=j+1;k<filtered.size();k++) {
+                Ball[] set = {filtered.get(i), filtered.get(j), filtered.get(k)};
+                int[] colors = {set[0].color,set[1].color,set[2].color};
+                Arrays.sort(colors);
+                if (expectedColors != null && !Arrays.equals(colors,expectedColors)) continue;
+                if (!Arrays.equals(colors,new int[]{1,2,3}) && !Arrays.equals(colors,new int[]{1,1,3})) continue;
+                double min = Math.min(set[0].diameter,Math.min(set[1].diameter,set[2].diameter));
+                double max = Math.max(set[0].diameter,Math.max(set[1].diameter,set[2].diameter));
+                if (max > min * 2.5) continue;
+                // Reward substantial ball-shaped color regions and consistency after
+                // perspective correction. Small glints must not invalidate a clear set.
+                double score = -4 * Math.log(max/min);
+                for (Ball b : set) score += Math.log1p(b.pixelArea);
+                if (score > bestScore) {
+                    secondScore = bestScore;
+                    bestScore = score;
+                    best = set;
+                } else if (score > secondScore) {
+                    secondScore = score;
+                }
+            }
+        // If a fourth similarly convincing object makes two sets plausible, remain
+        // uncertain rather than guessing and granting a clock reset.
+        return best == null || bestScore - secondScore < .85 ? null : best;
     }
 
     boolean calibrate(int[] rgb, int width, int height) {

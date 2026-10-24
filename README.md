@@ -332,3 +332,20 @@ DEFAULT_FRONT_CAMERA exige LensFilter=0 y no puede seleccionar ninguna.
 - La app ya no reutiliza un `CameraSelector` creado antes de `unbindAll()`.
 - Después de liberar la cámara, vuelve a consultar las cámaras disponibles y crea un selector fresco antes de enlazar análisis o grabación.
 - El mismo criterio se aplica a cada intento de calidad de grabación y al modo de marcado de mesa.
+
+
+## Marcothon v22 — reconocimiento de bolas con brillos
+
+- Corrige el rechazo de una escena por pequeñas manchas blancas que se detectaban como
+  bolas adicionales: reflejos de lámpara en bolas de color y destellos de las bandas.
+- Descarta regiones demasiado alargadas y pequeños brillos blancos dentro de una bola
+  roja o amarilla. Selecciona el conjunto coherente por color, tamaño corregido y evidencia
+  de píxeles, en vez de exigir que existan exactamente tres candidatos sin ruido.
+- Si dos conjuntos tienen una confianza similar, mantiene la lectura incierta. Una bola
+  ausente no se sustituye por sus brillos y no se mantienen marcas antiguas en pantalla.
+- Conserva la comprobación de dos segundos y las pausas por pérdida de visión del reloj.
+- Al marcar la mesa se debe incluir solo el paño, dejando fuera madera y bandas.
+- Añade regresiones sintéticas para paño azul, bolas con reflejos, destellos finos, una
+  bola ausente y un cuarto objeto blanco plausible. No publica la foto del usuario.
+- Parte de v21 y conserva su corrección de reconexión de cámara y la repetición.
+- APK independiente `com.clubmarcothon.marcador.v22`; versiones anteriores intactas.
