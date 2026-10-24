@@ -286,3 +286,22 @@ la compatibilidad real de cámara/codificador requiere el dispositivo.
 Verificar en el dispositivo: abrir Marcar mesa antes de iniciar la partida y durante una
 partida; cancelar y comprobar Repetición; volver a configurar y activar; comprobar la
 imagen y luego el reloj/repetición sobre la mesa real. Compilar no valida el hardware.
+
+
+## Marcothon v19 — reconexión de cámara para repetición
+
+- Antes de cambiar la conexión se espera a que termine el fragmento activo y su validación.
+- Cada intento usa un grabador nuevo. No se reutiliza el grabador de una combinación rechazada.
+- La grabación sin reconocimiento comienza con la configuración predeterminada que funcionaba
+  en v17, con alternativas HD/SD. Reconocimiento + grabación prueba SD/HD/FHD.
+- Si no se puede conectar la combinación, intenta recuperar la grabación sola y comunica
+  explícitamente que el reloj quedó manual y en pausa. No promete ambas funciones en ese caso.
+- Desactivar el reloj con cámara elimina realmente el análisis de la conexión.
+- Si no se puede abrir la cámara, Repetición muestra la excepción y su mensaje, en lugar
+  de decir que basta con esperar. Incluye Recuperar solo repetición como alternativa.
+- Conserva marcar mesa de v18, comprobante de serie y botones +3/+5.
+- APK independiente `com.clubmarcothon.marcador.v19`; versiones anteriores intactas.
+
+Validar en el dispositivo: repetición normal; abrir/cancelar la configuración de mesa;
+activar reconocimiento y comprobar si ambas funciones están admitidas; revisar el aviso
+si entra el modo manual y comprobar Reanudar. La compilación no comprueba el hardware.

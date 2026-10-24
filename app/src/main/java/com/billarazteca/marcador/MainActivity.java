@@ -1758,6 +1758,7 @@ public class MainActivity extends ComponentActivity {
                     cameraClockEnabled = false;
                     invalidateVision();
                     lastTick = System.currentTimeMillis();
+                    rebindAfterRecording();
                     refresh();
                 })
                 .setNegativeButton("Cerrar", null).show();
@@ -2099,91 +2100,153 @@ public class MainActivity extends ComponentActivity {
         return analysis;
     }
 
-    private void bindReplayCamera() {
-        if (replayCameraProvider == null || !hasCameraPermission()) return;
-
-        try {
-            replayCameraProvider.unbindAll();
-            if (clockAnalysis != null) clockAnalysis.clearAnalyzer();
+    private void releaseCameraBindings() {
+        if (clockAnalysis != null) {
+            clockAnalysis.clearAnalyzer();
             clockAnalysis = null;
-            int generation = ++cameraGeneration;
-            invalidateVision();
+        }
+        replayCameraProvider.unbindAll();
+        replayVideoCapture = null;
+        cameraGeneration++;
+        invalidateVision();
+    }
+
+    private String cameraFailureDetails(Throwable error) {
+        StringBuilder text = new StringBuilder(error.getClass().getSimpleName());
+        Throwable detail = error;
+        for (int i = 0; i < 3 && detail != null; i++, detail = detail.getCause()) {
+            String message = detail.getMessage();
+            if (message != null && !message.isEmpty()) {
+                text.append(": ").append(message.replace('\n', ' '));
+                break;
+            }
+        }
+        return text.length() > 500 ? text.substring(0, 500) : text.toString();
+    }
+
+    private boolean bindRecordingCamera(CameraSelector selector, boolean withClock) {
+        // Every attempt creates a fresh Recorder and new analysis use case. A Recorder
+        // from a rejected combination must not be reused for the video-only fallback.
+        Quality[] choices = withClock
+                ? new Quality[]{Quality.SD, Quality.HD, Quality.FHD}
+                : new Quality[]{null, Quality.HD, Quality.SD};
+        for (Quality quality : choices) {
+            try {
+                releaseCameraBindings();
+                Recorder.Builder builder = new Recorder.Builder();
+                if (quality != null) builder.setQualitySelector(QualitySelector.from(quality));
+                replayVideoCapture = VideoCapture.withOutput(builder.build());
+                if (withClock) {
+                    clockAnalysis = createClockAnalysis(cameraGeneration);
+                    replayCameraProvider.bindToLifecycle(this, selector, replayVideoCapture, clockAnalysis);
+                } else {
+                    // First attempt is the default video-only configuration used by v17.
+                    replayCameraProvider.bindToLifecycle(this, selector, replayVideoCapture);
+                }
+                replayLastProblem = "";
+                return true;
+            } catch (RuntimeException error) {
+                android.util.Log.w("MarcothonCamera", "Camera binding rejected; clock=" + withClock
+                        + ", quality=" + quality, error);
+                replayLastProblem = "No se pudo conectar la cámara para grabar.\n" + cameraFailureDetails(error);
+            }
+        }
+        // Discard the last failed use cases too, so retry never sees an unbound capture.
+        try { releaseCameraBindings(); } catch (RuntimeException ignored) { replayVideoCapture = null; }
+        return false;
+    }
+
+    private void bindReplayCamera() {
+        if (replayCameraProvider == null || !hasCameraPermission() || !foreground) return;
+        if (replayRecording != null || replayFinalizing) {
+            rebindPending = true;
+            stopReplayCapture();
+            return;
+        }
+        try {
             CameraSelector selector = selectedReplayCameraSelector();
-            // Calibration needs live analysis only. An idle VideoCapture can leave some
-            // devices waiting on its encoder surface, with no frames for the preview.
-            // Recreate the recorder after leaving setup, preserving the replay buffer.
             if (cameraSetupOpen) {
-                replayVideoCapture = null;
+                releaseCameraBindings();
                 calibrationFrameAt = 0;
                 lastAnalyzedFrame = 0;
-                clockAnalysis = createClockAnalysis(generation);
+                clockAnalysis = createClockAnalysis(cameraGeneration);
                 replayCameraProvider.bindToLifecycle(this, selector, clockAnalysis);
                 handler.removeCallbacks(calibrationFrameTimeout);
                 handler.postDelayed(calibrationFrameTimeout, 6000L);
                 return;
             }
-            Recorder.Builder recorderBuilder = new Recorder.Builder();
-            if (cameraClockEnabled || cameraSetupOpen || replayFailures > 0) {
-                recorderBuilder.setQualitySelector(QualitySelector.from(Quality.SD,
-                        FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)));
+            boolean clockRequested = cameraClockEnabled;
+            boolean bound = bindRecordingCamera(selector, clockRequested);
+            boolean clockFallback = false;
+            String combinedProblem = replayLastProblem;
+            if (!bound && clockRequested) {
+                // Keep the working replay path available if the device rejects all
+                // combined stream sizes. Never silently resume the manual clock.
+                cameraClockEnabled = false;
+                calibratedTable = null;
+                if (useTimer && gameStarted && !matchFinished) paused = true;
+                invalidateVision();
+                bound = bindRecordingCamera(selector, false);
+                clockFallback = bound;
+                refresh();
             }
-            Recorder recorder = recorderBuilder.build();
-            replayVideoCapture = VideoCapture.withOutput(recorder);
-
-            if (cameraClockEnabled) {
-                clockAnalysis = createClockAnalysis(generation);
-                try {
-                    replayCameraProvider.bindToLifecycle(this, selector, replayVideoCapture, clockAnalysis);
-                } catch (IllegalArgumentException unsupported) {
-                    clockAnalysis.clearAnalyzer();
-                    clockAnalysis = null;
+            if (!bound) {
+                if (replayCameraSource == CAMERA_SOURCE_EXTERNAL) {
+                    replayCameraSource = CAMERA_SOURCE_FRONT;
+                    saveReplayCameraSource();
                     cameraClockEnabled = false;
                     calibratedTable = null;
-                    if (gameStarted && useTimer) paused = true;
-                    Toast.makeText(this, "Esta cámara no admite repetición y reloj automático a la vez. Se conserva el modo manual.", Toast.LENGTH_LONG).show();
-                    replayCameraProvider.unbindAll();
-                    replayCameraProvider.bindToLifecycle(this, selector, replayVideoCapture);
-                    refresh();
+                    bindReplayCamera();
+                    return;
                 }
-            } else {
-                replayCameraProvider.bindToLifecycle(this, selector, replayVideoCapture);
+                replayCaptureDesired = false;
+                replayVideoCapture = null;
+                if (clockRequested && !combinedProblem.isEmpty()) {
+                    replayLastProblem += "\nTambién falló la combinación con reconocimiento de bolas.";
+                }
+                Toast.makeText(this, "No se pudo conectar la cámara. Repetición muestra el detalle del error.", Toast.LENGTH_LONG).show();
+                return;
             }
-
-            if (replayCaptureDesired && !replayPlaybackOpen) {
-                startReplaySegment();
+            if (clockFallback) {
+                new AlertDialog.Builder(this).setTitle("Repetición recuperada · reloj manual")
+                        .setMessage("Esta configuración de cámara no pudo iniciar la grabación junto con el reconocimiento de bolas. "
+                                + "La repetición se mantiene disponible y el cronómetro quedó en pausa. "
+                                + "Pulsa Reanudar para usarlo de forma manual.")
+                        .setPositiveButton("Entendido", null).show();
             }
-        } catch (Throwable error) {
+            if (replayCaptureDesired && !replayPlaybackOpen) startReplaySegment();
+        } catch (RuntimeException error) {
+            replayLastProblem = "No se pudo abrir la cámara seleccionada.\n" + cameraFailureDetails(error);
+            replayVideoCapture = null;
             if (replayCameraSource == CAMERA_SOURCE_EXTERNAL) {
                 replayCameraSource = CAMERA_SOURCE_FRONT;
                 saveReplayCameraSource();
                 calibratedTable = null;
                 cameraClockEnabled = false;
                 invalidateVision();
-                replayVideoCapture = null;
-
-                Toast.makeText(
-                        this,
-                        "La cámara USB no está disponible. Se usará la cámara frontal.",
-                        Toast.LENGTH_LONG
-                ).show();
-
                 bindReplayCamera();
-            } else {
-                replayCaptureDesired = false;
-                replayVideoCapture = null;
-                if (cameraSetupOpen && calibrationStatusView != null) {
-                    handler.removeCallbacks(calibrationFrameTimeout);
-                    calibrationStatusView.setText("No se pudo abrir la cámara para marcar la mesa (" +
-                            error.getClass().getSimpleName() + "). Pulsa Reintentar cámara.");
-                }
-
-                Toast.makeText(
-                        this,
-                        "No se pudo abrir la cámara seleccionada",
-                        Toast.LENGTH_LONG
-                ).show();
+                return;
             }
+            replayCaptureDesired = false;
+            if (cameraSetupOpen && calibrationStatusView != null) {
+                handler.removeCallbacks(calibrationFrameTimeout);
+                calibrationStatusView.setText(replayLastProblem + "\nPulsa Reintentar cámara.");
+            }
+            android.util.Log.w("MarcothonCamera", "Unable to connect camera", error);
+            Toast.makeText(this, "No se pudo abrir la cámara. Se guardó el detalle para Repetición.", Toast.LENGTH_LONG).show();
         }
+    }
+
+    private void recoverReplayWithoutClock() {
+        cameraClockEnabled = false;
+        calibratedTable = null;
+        if (useTimer && gameStarted && !matchFinished) paused = true;
+        invalidateVision();
+        replayFailures = 0;
+        replayCaptureDesired = true;
+        rebindAfterRecording();
+        refresh();
+        Toast.makeText(this, "Intentando recuperar la grabación con el reloj manual en pausa", Toast.LENGTH_LONG).show();
     }
 
     private void startReplaySegment() {
@@ -2428,14 +2491,20 @@ public class MainActivity extends ComponentActivity {
             return;
         }
         if (availability == ReplayAvailability.Action.RETRY) {
-            String problem = replayLastProblem.isEmpty()
-                    ? "La cámara aún no ha empezado a guardar video." : replayLastProblem;
-            new AlertDialog.Builder(this).setTitle("Repetición no disponible")
-                    .setMessage(problem + "\n\nSe reiniciará la grabación. Mantén la app abierta unos 10 segundos y vuelve a tocar Repetición.")
-                    .setPositiveButton("Entendido", null).show();
+            // Attempt recovery first, so this dialog reflects the actual binding result,
+            // rather than promising a restart before a hidden camera exception occurs.
             replayFailures = 0;
             replayVideoCapture = null;
             startReplayCaptureIfReady();
+            boolean connecting = replayCaptureDesired && replayVideoCapture != null;
+            String problem = replayLastProblem.isEmpty()
+                    ? "Se está iniciando la grabación. Mantén la app abierta unos 10 segundos y vuelve a tocar Repetición."
+                    : replayLastProblem;
+            AlertDialog.Builder notice = new AlertDialog.Builder(this)
+                    .setTitle(connecting ? "Preparando repetición" : "No se pudo iniciar la cámara")
+                    .setMessage(problem).setPositiveButton("Entendido", null);
+            if (!connecting) notice.setNeutralButton("Recuperar solo repetición", (d, w) -> recoverReplayWithoutClock());
+            notice.show();
             return;
         }
 
