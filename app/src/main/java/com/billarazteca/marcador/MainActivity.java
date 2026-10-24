@@ -2001,6 +2001,40 @@ public class MainActivity extends ComponentActivity {
         TextView status = text("", 13, Color.DKGRAY, true);
         status.setGravity(Gravity.CENTER);
 
+        final int[] index = {0};
+        final float[] playbackSpeed = {1.0f};
+        final android.media.MediaPlayer[] activePlayer = {null};
+
+        LinearLayout replayControls = new LinearLayout(this);
+        replayControls.setOrientation(LinearLayout.HORIZONTAL);
+        replayControls.setGravity(Gravity.CENTER);
+        replayControls.setPadding(0, dp(4), 0, dp(4));
+
+        Button previousButton = styledButton(
+                "⏮ Anterior",
+                LIGHT,
+                Color.rgb(14, 21, 29),
+                13
+        );
+
+        Button speedButton = styledButton(
+                "Velocidad 1×",
+                YELLOW,
+                Color.BLACK,
+                13
+        );
+
+        Button nextButton = styledButton(
+                "Siguiente ⏭",
+                LIGHT,
+                Color.rgb(14, 21, 29),
+                13
+        );
+
+        replayControls.addView(previousButton, actionParams(1f));
+        replayControls.addView(speedButton, actionParams(1f));
+        replayControls.addView(nextButton, actionParams(1f));
+
         VideoView video = new VideoView(this);
         MediaController controls = new MediaController(this);
         controls.setAnchorView(video);
@@ -2008,44 +2042,38 @@ public class MainActivity extends ComponentActivity {
 
         box.addView(status, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(30)
+                dp(28)
         ));
+
+        box.addView(replayControls, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(48)
+        ));
+
+        int screenHeight = getResources().getDisplayMetrics().heightPixels;
+        int replayVideoHeight = Math.max(
+                dp(150),
+                Math.min(dp(235), screenHeight - dp(205))
+        );
 
         box.addView(video, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(330)
+                replayVideoHeight
         ));
 
         TextView note = text(
-                "⏮ Anterior y ⏭ Siguiente cambian de fragmento. Reproducir/pausa y la barra controlan el fragmento actual.",
-                12,
+                "Anterior/Siguiente cambian de fragmento. La velocidad se conserva al cambiar de clip.",
+                11,
                 Color.DKGRAY,
                 false
         );
-        note.setPadding(dp(6), dp(5), dp(6), dp(2));
+        note.setPadding(dp(6), dp(3), dp(6), 0);
         note.setGravity(Gravity.CENTER);
         box.addView(note);
 
-        Button speedButton = styledButton(
-                "Velocidad 1×",
-                LIGHT,
-                Color.rgb(14, 21, 29),
-                13
-        );
-
-        LinearLayout.LayoutParams speedParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(42)
-        );
-        speedParams.setMargins(dp(8), dp(5), dp(8), dp(4));
-        box.addView(speedButton, speedParams);
-
-        final int[] index = {0};
-        final float[] playbackSpeed = {1.0f};
-        final android.media.MediaPlayer[] activePlayer = {null};
-
         speedButton.setOnClickListener(v -> {
             playbackSpeed[0] = playbackSpeed[0] == 1.0f ? 0.5f : 1.0f;
+
             speedButton.setText(
                     playbackSpeed[0] == 0.5f
                             ? "Velocidad 0.5×"
@@ -2069,46 +2097,45 @@ public class MainActivity extends ComponentActivity {
             }
         });
 
-        controls.setPrevNextListeners(
-                v -> {
-                    if (index[0] < files.size() - 1) {
-                        index[0]++;
-                        playReplayFile(
-                                video,
-                                status,
-                                files,
-                                index,
-                                playbackSpeed,
-                                activePlayer
-                        );
-                    } else {
-                        Toast.makeText(
-                                MainActivity.this,
-                                "Ya estás en el último fragmento",
-                                Toast.LENGTH_SHORT
-                        ).show();
-                    }
-                },
-                v -> {
-                    if (index[0] > 0) {
-                        index[0]--;
-                        playReplayFile(
-                                video,
-                                status,
-                                files,
-                                index,
-                                playbackSpeed,
-                                activePlayer
-                        );
-                    } else {
-                        Toast.makeText(
-                                MainActivity.this,
-                                "Ya estás en el primer fragmento",
-                                Toast.LENGTH_SHORT
-                        ).show();
-                    }
-                }
-        );
+        previousButton.setOnClickListener(v -> {
+            if (index[0] > 0) {
+                index[0]--;
+                playReplayFile(
+                        video,
+                        status,
+                        files,
+                        index,
+                        playbackSpeed,
+                        activePlayer
+                );
+            } else {
+                Toast.makeText(
+                        MainActivity.this,
+                        "Ya estás en el primer fragmento",
+                        Toast.LENGTH_SHORT
+                ).show();
+            }
+        });
+
+        nextButton.setOnClickListener(v -> {
+            if (index[0] < files.size() - 1) {
+                index[0]++;
+                playReplayFile(
+                        video,
+                        status,
+                        files,
+                        index,
+                        playbackSpeed,
+                        activePlayer
+                );
+            } else {
+                Toast.makeText(
+                        MainActivity.this,
+                        "Ya estás en el último fragmento",
+                        Toast.LENGTH_SHORT
+                ).show();
+            }
+        });
 
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Repetición · hasta " + requestedSeconds + " s")
