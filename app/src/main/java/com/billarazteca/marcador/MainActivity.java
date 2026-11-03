@@ -137,7 +137,9 @@ public class MainActivity extends ComponentActivity {
 
     private int score1 = 0;
     private int score2 = 0;
-    private int innings1 = 1;
+    private VisitLedger visits = new VisitLedger();
+    private Button passClockButton;
+    private int innings1 = 0;
     private int innings2 = 0;
     private int maxRun1 = 0;
     private int maxRun2 = 0;
@@ -478,8 +480,9 @@ public class MainActivity extends ComponentActivity {
         Button plus = styledButton("+1", YELLOW, Color.BLACK, 22);
         Button plusThree = styledButton("+3", YELLOW, Color.BLACK, 22);
         Button plusFive = styledButton("+5", YELLOW, Color.BLACK, 22);
+        Button zero = styledButton("0", LIGHT, Color.BLACK, 22);
 
-        Button[] scoreButtons = {minus, plus, plusThree, plusFive};
+        Button[] scoreButtons = {minus, zero, plus, plusThree, plusFive};
         for (int i = 0; i < scoreButtons.length; i++) {
             Button button = scoreButtons[i];
             button.setMinWidth(0);
@@ -488,7 +491,7 @@ public class MainActivity extends ComponentActivity {
             button.setAutoSizeTextTypeUniformWithConfiguration(12, 22, 1, TypedValue.COMPLEX_UNIT_SP);
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                     0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
-            params.setMargins(i == 0 ? 0 : dp(2), dp(4), i == 3 ? 0 : dp(2), 0);
+            params.setMargins(i == 0 ? 0 : dp(2), dp(4), i == scoreButtons.length - 1 ? 0 : dp(2), 0);
             buttons.addView(button, params);
         }
         int player = first ? 1 : 2;
@@ -497,6 +500,8 @@ public class MainActivity extends ComponentActivity {
         plusThree.setContentDescription("Sumar tres carambolas al jugador " + player);
         plusFive.setContentDescription("Sumar cinco carambolas al jugador " + player);
         minus.setOnClickListener(v -> subtractPoint(player));
+        zero.setContentDescription("Registrar visita sin carambolas del jugador " + player);
+        zero.setOnClickListener(v -> addPoints(player, 0));
         plus.setOnClickListener(v -> addPoints(player, 1));
         plusThree.setOnClickListener(v -> addPoints(player, 3));
         plusFive.setOnClickListener(v -> addPoints(player, 5));
@@ -613,7 +618,8 @@ public class MainActivity extends ComponentActivity {
         actions.setPadding(0, dp(4), 0, 0);
 
         undoButton = styledButton("↶  Deshacer", Color.rgb(150, 156, 164), Color.rgb(14, 21, 29), 13);
-        Button endTurn = styledButton("FIN DE TURNO", YELLOW, Color.BLACK, 17);
+        Button endTurn = styledButton("PASAR RELOJ", YELLOW, Color.BLACK, 17);
+        passClockButton = endTurn;
         pauseButton = styledButton("INICIAR PARTIDA", YELLOW, Color.BLACK, 12);
         resetButton = styledButton("Reiniciar reloj", LIGHT, Color.rgb(14, 21, 29), 12);
         replayButton = styledButton("▶ Repetición", GREEN, Color.WHITE, 12);
@@ -706,26 +712,28 @@ public class MainActivity extends ComponentActivity {
 
         score1View.setText(String.valueOf(score1));
         score2View.setText(String.valueOf(score2));
-        updateScoreBreakdown(scoreBreakdown1View, turnBase1, score1);
-        updateScoreBreakdown(scoreBreakdown2View, turnBase2, score2);
+        updateScoreBreakdown(scoreBreakdown1View, turnBase1, score1, 1);
+        updateScoreBreakdown(scoreBreakdown2View, turnBase2, score2, 2);
 
         avg1View.setText(String.format(
                 Locale.US, "%.3f",
-                innings1 > 0 ? score1 / (double) innings1 : 0.0
+                visits.average(1)
         ));
         avg2View.setText(String.format(
                 Locale.US, "%.3f",
-                innings2 > 0 ? score2 / (double) innings2 : 0.0
+                visits.average(2)
         ));
 
         run1View.setText(String.valueOf(maxRun1));
         run2View.setText(String.valueOf(maxRun2));
 
-        inningView.setText(String.valueOf(Math.max(innings1, innings2)));
+        inningView.setText(String.valueOf(Math.max(1, Math.max(innings1, innings2))));
 
         panel1.setBackground(playerBackground(currentPlayer == 1));
         panel2.setBackground(playerBackground(currentPlayer == 2));
 
+        active1View.setText(useTimer ? "● RELOJ" : "● ANOTANDO");
+        active2View.setText(useTimer ? "● RELOJ" : "● ANOTANDO");
         active1View.setVisibility(currentPlayer == 1 ? View.VISIBLE : View.INVISIBLE);
         active2View.setVisibility(currentPlayer == 2 ? View.VISIBLE : View.INVISIBLE);
 
@@ -735,7 +743,7 @@ public class MainActivity extends ComponentActivity {
         } else if (!gameStarted) {
             activeView.setText("Primer turno: " + currentName);
         } else {
-            activeView.setText("En turno: " + currentName);
+            activeView.setText((useTimer ? "Reloj: " : "Última anotación: ") + currentName);
         }
 
         updateExtensionButton(extension1Button, 1, extensions1);
@@ -768,6 +776,8 @@ public class MainActivity extends ComponentActivity {
             }
         }
 
+        passClockButton.setVisibility(useTimer ? View.VISIBLE : View.GONE);
+        passClockButton.setEnabled(useTimer && gameStarted && !matchFinished);
         resetButton.setEnabled(useTimer && gameStarted && !matchFinished);
         resetButton.setAlpha(useTimer ? 1f : .55f);
 
@@ -802,11 +812,12 @@ public class MainActivity extends ComponentActivity {
         savePersistentState(false);
     }
 
-    private void updateScoreBreakdown(TextView view, int base, int total) {
+    private void updateScoreBreakdown(TextView view, int base, int total, int player) {
+        boolean show = visits.hasVisit(player);
         int added = total - base;
-        String receipt = added > 0 ? base + " + " + added + " = " + total : "";
+        String receipt = show ? base + " + " + added + " = " + total : "";
         view.setText(receipt);
-        view.setVisibility(added > 0 ? View.VISIBLE : View.INVISIBLE);
+        view.setVisibility(show ? View.VISIBLE : View.INVISIBLE);
         view.setContentDescription(added > 0
                 ? base + " carambolas anteriores, más " + added + " de esta serie, total " + total
                 : null);
@@ -848,40 +859,42 @@ public class MainActivity extends ComponentActivity {
         button.setAlpha(.85f);
     }
 
+    private void syncVisits() {
+        score1 = visits.total(1);
+        score2 = visits.total(2);
+        innings1 = visits.innings(1);
+        innings2 = visits.innings(2);
+        maxRun1 = visits.best(1);
+        maxRun2 = visits.best(2);
+        turnBase1 = visits.receiptBase(1);
+        turnBase2 = visits.receiptBase(2);
+        currentRun = visits.pendingPoints();
+    }
+
     private void addPoints(int player, int points) {
         if (!gameStarted || matchFinished) {
             Toast.makeText(this, "Primero inicia la partida", Toast.LENGTH_SHORT).show();
             return;
         }
-        if (player != currentPlayer || points <= 0) return;
-        int currentScore = player == 1 ? score1 : score2;
-        int added = Math.min(points, Math.max(0, target - currentScore));
-        if (added == 0) return;
-        // A bulk addition is one undoable action, with the same turn/timer rules as +1.
+        if (points < 0) return;
+        // Repeated zero on the same pending visit is not a second empty visit.
+        if (points == 0 && visits.pendingPlayer() == player) return;
         pushState();
-        currentRun += added;
-
-        if (player == 1) {
-            score1 += added;
-            maxRun1 = Math.max(maxRun1, currentRun);
-        } else {
-            score2 += added;
-            maxRun2 = Math.max(maxRun2, currentRun);
-        }
-
-        extensionArmed = false;
-
+        visits.record(player, points, target);
+        syncVisits();
+        if (!useTimer) currentPlayer = player;
         if ((player == 1 ? score1 : score2) >= target) {
             paused = true;
             gameStarted = false;
             matchFinished = true;
             lastTick = System.currentTimeMillis();
+            stopReplayCapture();
             refresh();
             showWinner(player);
             return;
         }
-
-        resetTimerInternal();
+        // Scoring never changes clock ownership or its remaining time.
+        refresh();
     }
 
     private void subtractPoint(int player) {
@@ -889,44 +902,19 @@ public class MainActivity extends ComponentActivity {
             Toast.makeText(this, "Primero inicia la partida", Toast.LENGTH_SHORT).show();
             return;
         }
-        if (player == 1 && score1 <= 0) return;
-        if (player == 2 && score2 <= 0) return;
-
+        if (visits.total(player) <= 0) return;
         pushState();
-
-        if (player == 1) {
-            score1--;
-            turnBase1 = Math.min(turnBase1, score1);
-            if (currentPlayer == 1 && currentRun > 0) currentRun--;
-        } else {
-            score2--;
-            turnBase2 = Math.min(turnBase2, score2);
-            if (currentPlayer == 2 && currentRun > 0) currentRun--;
-        }
-
+        visits.subtract(player);
+        syncVisits();
         refresh();
     }
 
     private void finishTurn() {
-        if (!gameStarted || matchFinished) {
-            Toast.makeText(this, "Primero inicia la partida", Toast.LENGTH_SHORT).show();
-            return;
-        }
+        if (!useTimer || !gameStarted || matchFinished) return;
         pushState();
-
-        currentRun = 0;
+        currentPlayer = currentPlayer == 1 ? 2 : 1;
         extensionArmed = false;
-
-        if (currentPlayer == 1) {
-            currentPlayer = 2;
-            turnBase2 = score2;
-            innings2++;
-        } else {
-            currentPlayer = 1;
-            turnBase1 = score1;
-            innings1++;
-        }
-
+        // Clock handoff does not close, create or count a scoring visit.
         resetTimerInternal();
     }
 
@@ -1143,12 +1131,13 @@ public class MainActivity extends ComponentActivity {
 
             score1 = p.getInt("score1", 0);
             score2 = p.getInt("score2", 0);
-            innings1 = p.getInt("innings1", 1);
+            innings1 = p.getInt("innings1", 0);
             innings2 = p.getInt("innings2", 0);
             maxRun1 = p.getInt("maxRun1", 0);
             maxRun2 = p.getInt("maxRun2", 0);
             currentRun = p.getInt("currentRun", 0);
             currentPlayer = p.getInt("currentPlayer", 1);
+            visits = VisitLedger.decode(p.getString("visitLedger", ""));
             turnBase1 = Math.max(0, Math.min(score1, p.getInt("turnBase1",
                     currentPlayer == 1 ? score1 - currentRun : score1)));
             turnBase2 = Math.max(0, Math.min(score2, p.getInt("turnBase2",
@@ -1167,6 +1156,7 @@ public class MainActivity extends ComponentActivity {
 
             paused = useTimer && gameStarted;
 
+            syncVisits();
             history.clear();
             recoveryActive = true;
             lastPersistentCore = "";
@@ -1207,9 +1197,10 @@ public class MainActivity extends ComponentActivity {
         player2 = "Jugador 2";
         score1 = 0;
         score2 = 0;
+        visits = new VisitLedger();
         turnBase1 = 0;
         turnBase2 = 0;
-        innings1 = 1;
+        innings1 = 0;
         innings2 = 0;
         maxRun1 = 0;
         maxRun2 = 0;
@@ -1239,6 +1230,7 @@ public class MainActivity extends ComponentActivity {
                 player2 + "\u0001" +
                 score1 + "\u0001" +
                 score2 + "\u0001" +
+                visits.encode() + "\u0001" +
                 turnBase1 + "\u0001" +
                 turnBase2 + "\u0001" +
                 innings1 + "\u0001" +
@@ -1258,10 +1250,10 @@ public class MainActivity extends ComponentActivity {
     }
 
     private boolean hasMeaningfulMatchState() {
-        return gameStarted ||
+        return !visits.encode().isEmpty() || gameStarted ||
                 score1 != 0 ||
                 score2 != 0 ||
-                innings1 != 1 ||
+                innings1 != 0 ||
                 innings2 != 0 ||
                 maxRun1 != 0 ||
                 maxRun2 != 0 ||
@@ -1308,6 +1300,7 @@ public class MainActivity extends ComponentActivity {
                 .putString("player2", player2)
                 .putInt("score1", score1)
                 .putInt("score2", score2)
+                .putString("visitLedger", visits.encode())
                 .putInt("turnBase1", turnBase1)
                 .putInt("turnBase2", turnBase2)
                 .putInt("innings1", innings1)
@@ -1378,7 +1371,7 @@ public class MainActivity extends ComponentActivity {
                 matchFinished ||
                 score1 > 0 ||
                 score2 > 0 ||
-                innings1 > 1 ||
+                innings1 > 0 ||
                 innings2 > 0 ||
                 extensions1 < 2 ||
                 extensions2 < 2;
@@ -1526,9 +1519,10 @@ public class MainActivity extends ComponentActivity {
 
                         score1 = 0;
                         score2 = 0;
+                        visits = new VisitLedger();
                         turnBase1 = 0;
                         turnBase2 = 0;
-                        innings1 = 1;
+                        innings1 = 0;
                         innings2 = 0;
                         maxRun1 = 0;
                         maxRun2 = 0;
@@ -1597,7 +1591,7 @@ public class MainActivity extends ComponentActivity {
                 secondsLeft, paused,
                 gameStarted, matchFinished,
                 extensions1, extensions2,
-                extensionArmed
+                extensionArmed, visits.encode()
         ));
 
         while (history.size() > 60) {
@@ -1631,6 +1625,8 @@ public class MainActivity extends ComponentActivity {
         extensions1 = s.extensions1;
         extensions2 = s.extensions2;
         extensionArmed = s.extensionArmed;
+        visits = VisitLedger.decode(s.visitLedger);
+        syncVisits();
 
         lastTick = System.currentTimeMillis();
         refresh();
@@ -2484,7 +2480,7 @@ public class MainActivity extends ComponentActivity {
 
         new AlertDialog.Builder(this)
                 .setTitle("Tiempo agotado")
-                .setMessage("El cronómetro llegó a cero. ¿Confirmar falta por tiempo?")
+                .setMessage("El cronómetro llegó a cero. ¿Confirmar falta y pasar el reloj? Las carambolas o el 0 se anotan por separado.")
                 .setCancelable(false)
                 .setNegativeButton("Cancelar", (dialog, which) -> {
                     timeFoulDialogShown = false;
@@ -2675,6 +2671,7 @@ public class MainActivity extends ComponentActivity {
         final int extensions1;
         final int extensions2;
         final boolean extensionArmed;
+        final String visitLedger;
 
         State(
                 String player1,
@@ -2697,7 +2694,8 @@ public class MainActivity extends ComponentActivity {
                 boolean matchFinished,
                 int extensions1,
                 int extensions2,
-                boolean extensionArmed
+                boolean extensionArmed,
+                String visitLedger
         ) {
             this.player1 = player1;
             this.player2 = player2;
@@ -2720,6 +2718,7 @@ public class MainActivity extends ComponentActivity {
             this.extensions1 = extensions1;
             this.extensions2 = extensions2;
             this.extensionArmed = extensionArmed;
+            this.visitLedger = visitLedger;
         }
     }
 }
