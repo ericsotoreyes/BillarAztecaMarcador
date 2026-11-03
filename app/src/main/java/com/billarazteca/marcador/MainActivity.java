@@ -117,8 +117,6 @@ public class MainActivity extends ComponentActivity {
     private boolean replayOptionsPending = false;
     private boolean resumeTimerAfterReplay = false;
     private boolean cameraProviderInitInProgress = false;
-    private String replayPreferredCameraId = "";
-    private String replayResolvedCameraId = "";
     private boolean cameraPermissionRequestInFlight = false;
     private int replayCameraSource = CAMERA_SOURCE_FRONT;
 
@@ -172,10 +170,8 @@ public class MainActivity extends ComponentActivity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         enableFullscreen();
 
-        replayCameraSource = getSharedPreferences("replay_settings", MODE_PRIVATE)
-                .getInt("camera_source", CAMERA_SOURCE_FRONT);
-        replayPreferredCameraId = getSharedPreferences("replay_settings", MODE_PRIVATE)
-                .getString("camera_id", "");
+        // Always use the front camera, ignoring selections from earlier versions.
+        replayCameraSource = CAMERA_SOURCE_FRONT;
         clearReplayCacheDirectory();
 
         try {
@@ -630,10 +626,6 @@ public class MainActivity extends ComponentActivity {
             }
         });
         replayButton.setOnClickListener(v -> beginReplayReview());
-        replayButton.setOnLongClickListener(v -> {
-            showReplayCameraSourceDialog();
-            return true;
-        });
         newGame.setOnClickListener(v -> requestNewGame());
 
         actions.addView(undoButton, actionParams(.82f));
@@ -1739,49 +1731,36 @@ public class MainActivity extends ComponentActivity {
         }, ContextCompat.getMainExecutor(this));
     }
 
-    private String availableCameraId(CameraInfo info, int index) {
-        try {
-            return androidx.camera.camera2.interop.Camera2CameraInfo.from(info).getCameraId();
-        } catch (IllegalArgumentException notCamera2) {
-            return "camera-" + index;
-        }
-    }
-
-    @androidx.annotation.OptIn(markerClass = androidx.camera.core.ExperimentalLensFacing.class)
-    private CameraSelector selectedReplayCameraSelector() {
-        if (replayCameraProvider == null) throw new IllegalStateException("La cámara aún no se ha inicializado");
+    private CameraSelector selectedReplayCameraSelector() throws Exception {
+        if (replayCameraProvider == null) throw new IllegalStateException("Cámara no inicializada");
         List<CameraInfo> available = replayCameraProvider.getAvailableCameraInfos();
+        android.hardware.camera2.CameraManager manager =
+                (android.hardware.camera2.CameraManager) getSystemService(CAMERA_SERVICE);
         String[] ids = new String[available.size()];
-        int[] facing = new int[available.size()];
-        for (int i=0;i<available.size();i++) {
-            ids[i] = availableCameraId(available.get(i),i);
-            facing[i] = available.get(i).getLensFacing();
+        int[] nativeFacing = new int[available.size()];
+        for (int i = 0; i < available.size(); i++) {
+            ids[i] = androidx.camera.camera2.interop.Camera2CameraInfo.from(available.get(i)).getCameraId();
+            Integer lens = manager.getCameraCharacteristics(ids[i])
+                    .get(android.hardware.camera2.CameraCharacteristics.LENS_FACING);
+            nativeFacing[i] = lens == null ? -1 : lens;
         }
-        int index = CameraChoicePolicy.select(ids, facing, replayPreferredCameraId,
-                replayCameraSource == CAMERA_SOURCE_EXTERNAL);
-        if (index < 0) throw new IllegalStateException("Android no anuncia ninguna cámara disponible");
-        replayResolvedCameraId = ids[index];
-        replayCameraSource = facing[index] == CameraSelector.LENS_FACING_EXTERNAL
-                ? CAMERA_SOURCE_EXTERNAL : CAMERA_SOURCE_FRONT;
-        // Use the exact CameraInfo selector. DEFAULT_FRONT_CAMERA adds a lens-facing
-        // filter that rejects every camera on devices reporting both lenses as BACK.
-        return available.get(index).getCameraSelector();
-    }
-
-    @androidx.annotation.OptIn(markerClass = androidx.camera.core.ExperimentalLensFacing.class)
-    private boolean hasExternalReplayCamera() {
-        if (replayCameraProvider == null) return false;
-
-        for (CameraInfo info : replayCameraProvider.getAvailableCameraInfos()) {
-            try {
-                if (info.getLensFacing() == CameraSelector.LENS_FACING_EXTERNAL) {
-                    return true;
+        // Some vendor CameraX inventories mislabel both lenses. Consult the legacy
+        // inventory independently; never infer orientation from ID or list order.
+        String legacyFrontId = "";
+        try {
+            for (int i = 0; i < android.hardware.Camera.getNumberOfCameras(); i++) {
+                android.hardware.Camera.CameraInfo info = new android.hardware.Camera.CameraInfo();
+                android.hardware.Camera.getCameraInfo(i, info);
+                if (info.facing == android.hardware.Camera.CameraInfo.CAMERA_FACING_FRONT) {
+                    legacyFrontId = String.valueOf(i);
+                    break;
                 }
-            } catch (Throwable ignored) {
             }
-        }
-
-        return false;
+        } catch (RuntimeException ignored) {}
+        int index = CameraChoicePolicy.selectFront(ids, nativeFacing, legacyFrontId);
+        if (index < 0) throw new IllegalStateException("Android no identifica una cámara frontal disponible");
+        replayCameraSource = CAMERA_SOURCE_FRONT;
+        return available.get(index).getCameraSelector();
     }
 
     private void bindReplayCamera() {
@@ -1809,7 +1788,7 @@ public class MainActivity extends ComponentActivity {
             replayVideoCapture = null;
             try { replayCameraProvider.unbindAll(); } catch (Throwable ignored) {}
             Toast.makeText(this,
-                    "No se pudo iniciar la cámara. Mantén presionado Repetición para elegir otra.",
+                    "No se pudo iniciar la cámara frontal. No se usará la trasera.",
                     Toast.LENGTH_LONG).show();
         }
     }
@@ -2313,59 +2292,6 @@ public class MainActivity extends ComponentActivity {
         if (gameStarted && !matchFinished) {
             startReplayCaptureIfReady();
         }
-    }
-
-    private void showReplayCameraSourceDialog() {
-        if (!hasCameraPermission()) {
-            requestReplayCameraPermission();
-            return;
-        }
-
-        if (replayCameraProvider == null) {
-            initializeReplayCameraProvider();
-            Toast.makeText(
-                    this,
-                    "Inicializando cámaras. Mantén presionado Repetición nuevamente.",
-                    Toast.LENGTH_SHORT
-            ).show();
-            return;
-        }
-
-        java.util.List<CameraInfo> available = replayCameraProvider.getAvailableCameraInfos();
-        if (available.isEmpty()) {
-            Toast.makeText(this, "Android no anuncia cámaras disponibles", Toast.LENGTH_LONG).show();
-            return;
-        }
-        String[] ids = new String[available.size()];
-        String[] labels = new String[available.size()];
-        int selected = -1;
-        for (int i = 0; i < available.size(); i++) {
-            ids[i] = availableCameraId(available.get(i), i);
-            labels[i] = "Cámara " + (i + 1) + " · ID " + ids[i];
-            if (ids[i].equals(replayResolvedCameraId)) selected = i;
-        }
-        new AlertDialog.Builder(this)
-                .setTitle("Cámara para repetición")
-                .setSingleChoiceItems(labels, selected, (dialog, which) -> {
-                    replayPreferredCameraId = ids[which];
-                    saveReplayCameraSource();
-                    stopReplayCapture();
-                    clearReplayBuffer();
-                    try { replayCameraProvider.unbindAll(); } catch (Throwable ignored) {}
-                    replayVideoCapture = null;
-                    dialog.dismiss();
-                    startReplayCaptureIfReady();
-                })
-                .setNegativeButton("Cancelar", null)
-                .show();
-    }
-
-    private void saveReplayCameraSource() {
-        getSharedPreferences("replay_settings", MODE_PRIVATE)
-                .edit()
-                .putInt("camera_source", replayCameraSource)
-                .putString("camera_id", replayPreferredCameraId)
-                .apply();
     }
 
     private final Runnable timerRunnable = new Runnable() {
