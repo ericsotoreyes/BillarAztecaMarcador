@@ -199,14 +199,26 @@ public class MainActivity extends ComponentActivity {
     protected void onResume() {
         super.onResume();
         enableFullscreen();
+    }
 
-        if (gameStarted && !matchFinished && !replayPlaybackOpen) {
-            startReplayCaptureIfReady();
-        }
+    @Override
+    protected void onPostResume() {
+        super.onPostResume();
+        // ComponentActivity reaches RESUMED after onResume returns. Dispatch on
+        // the next main-loop turn so first permission/resume does not lose startup.
+        scheduleReplayAutoStart();
+    }
+
+    private final Runnable replayAutoStartRunnable = this::startReplayCaptureIfReady;
+
+    private void scheduleReplayAutoStart() {
+        handler.removeCallbacks(replayAutoStartRunnable);
+        handler.post(replayAutoStartRunnable);
     }
 
     @Override
     protected void onPause() {
+        handler.removeCallbacks(replayAutoStartRunnable);
         stopReplayCapture();
         if (replayCameraProvider != null) {
             try { replayCameraProvider.unbindAll(); } catch (Throwable ignored) {}
@@ -232,6 +244,7 @@ public class MainActivity extends ComponentActivity {
     protected void onDestroy() {
         savePersistentState(true);
         handler.removeCallbacks(timerRunnable);
+        handler.removeCallbacks(replayAutoStartRunnable);
         handler.removeCallbacks(rotateReplayRunnable);
         stopReplayCapture();
 
@@ -691,13 +704,13 @@ public class MainActivity extends ComponentActivity {
         return d;
     }
 
-    private GradientDrawable playerBackground(boolean active) {
+    private GradientDrawable playerBackground() {
         GradientDrawable d = new GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
                 new int[]{Color.rgb(16, 25, 35), Color.rgb(9, 15, 22)}
         );
         d.setCornerRadius(dp(16));
-        d.setStroke(dp(active ? 4 : 1), active ? YELLOW : BORDER);
+        d.setStroke(dp(1), BORDER);
         return d;
     }
 
@@ -729,8 +742,8 @@ public class MainActivity extends ComponentActivity {
 
         inningView.setText(String.valueOf(Math.max(1, Math.max(innings1, innings2))));
 
-        panel1.setBackground(playerBackground(currentPlayer == 1));
-        panel2.setBackground(playerBackground(currentPlayer == 2));
+        panel1.setBackground(playerBackground());
+        panel2.setBackground(playerBackground());
 
         active1View.setText(useTimer ? "● RELOJ" : "● ANOTANDO");
         active2View.setText(useTimer ? "● RELOJ" : "● ANOTANDO");
@@ -952,7 +965,7 @@ public class MainActivity extends ComponentActivity {
                     Toast.LENGTH_SHORT
             ).show();
 
-            startReplayCaptureIfReady();
+            scheduleReplayAutoStart();
             return;
         }
 
@@ -1669,7 +1682,7 @@ public class MainActivity extends ComponentActivity {
                     "Cámara habilitada para repetición instantánea",
                     Toast.LENGTH_SHORT
             ).show();
-            startReplayCaptureIfReady();
+            scheduleReplayAutoStart();
         } else {
             Toast.makeText(
                     this,
