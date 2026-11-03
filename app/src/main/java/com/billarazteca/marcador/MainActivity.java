@@ -112,6 +112,8 @@ public class MainActivity extends ComponentActivity {
     private ProcessCameraProvider replayCameraProvider;
     private VideoCapture<Recorder> replayVideoCapture;
     private Recording replayRecording;
+    private String replayCameraFailure = "";
+    private long replaySegmentStartedAt = 0L;
     private boolean replayCaptureDesired = false;
     private boolean replayPlaybackOpen = false;
     private boolean replayOptionsPending = false;
@@ -1766,31 +1768,73 @@ public class MainActivity extends ComponentActivity {
     private void bindReplayCamera() {
         if (replayCameraProvider == null || !hasCameraPermission() || !replayCaptureDesired ||
                 !getLifecycle().getCurrentState().isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) return;
-
-        try {
-            replayCameraProvider.unbindAll();
-
-            Recorder recorder = new Recorder.Builder().build();
-            replayVideoCapture = VideoCapture.withOutput(recorder);
-
-            CameraSelector selector = selectedReplayCameraSelector();
-            replayCameraProvider.bindToLifecycle(
-                    this,
-                    selector,
-                    replayVideoCapture
-            );
-
-            if (replayCaptureDesired && !replayPlaybackOpen) {
-                startReplaySegment();
+        StringBuilder attempts = new StringBuilder();
+        androidx.camera.video.Quality[] qualities = {
+                androidx.camera.video.Quality.SD, androidx.camera.video.Quality.HD,
+                androidx.camera.video.Quality.FHD};
+        for (androidx.camera.video.Quality quality : qualities) {
+            try {
+                replayCameraProvider.unbindAll();
+                // Select a fresh, verified front camera after every unbind.
+                CameraSelector selector = selectedReplayCameraSelector();
+                Recorder recorder = new Recorder.Builder().setQualitySelector(
+                        androidx.camera.video.QualitySelector.from(quality)).build();
+                replayVideoCapture = VideoCapture.withOutput(recorder);
+                replayCameraProvider.bindToLifecycle(this, selector, replayVideoCapture);
+                replayCameraFailure = "";
+                if (replayCaptureDesired && !replayPlaybackOpen) startReplaySegment();
+                return;
+            } catch (Exception error) {
+                attempts.append(quality).append(": ").append(cameraErrorText(error)).append("\n");
+                replayVideoCapture = null;
             }
-        } catch (Throwable error) {
-            replayCaptureDesired = false;
-            replayVideoCapture = null;
-            try { replayCameraProvider.unbindAll(); } catch (Throwable ignored) {}
-            Toast.makeText(this,
-                    "No se pudo iniciar la cámara frontal. No se usará la trasera.",
-                    Toast.LENGTH_LONG).show();
         }
+        replayCaptureDesired = false;
+        try { replayCameraProvider.unbindAll(); } catch (Exception ignored) {}
+        replayCameraFailure = attempts.toString();
+        Toast.makeText(this, "La cámara frontal no inició. Toca Repetición para ver el error.",
+                Toast.LENGTH_LONG).show();
+    }
+
+    private String cameraErrorText(Throwable error) {
+        StringBuilder detail = new StringBuilder();
+        for (int i = 0; error != null && i < 4; i++, error = error.getCause()) {
+            if (i > 0) detail.append(" → ");
+            detail.append(error.getClass().getSimpleName()).append(": ").append(error.getMessage());
+        }
+        return detail.toString();
+    }
+
+    private void showReplayCameraFailure() {
+        StringBuilder detail = new StringBuilder("La grabación no ha comenzado. No se usará la cámara trasera.\n\n");
+        detail.append(android.os.Build.MANUFACTURER).append(" ").append(android.os.Build.MODEL)
+                .append(" · Android ").append(android.os.Build.VERSION.RELEASE).append("\n");
+        try {
+            android.hardware.camera2.CameraManager manager =
+                    (android.hardware.camera2.CameraManager) getSystemService(CAMERA_SERVICE);
+            for (String id : manager.getCameraIdList()) {
+                detail.append("Camera2 ID ").append(id).append(" orientación=")
+                        .append(manager.getCameraCharacteristics(id).get(
+                                android.hardware.camera2.CameraCharacteristics.LENS_FACING)).append("\n");
+            }
+            for (CameraInfo info : replayCameraProvider.getAvailableCameraInfos()) {
+                detail.append("CameraX ID ").append(androidx.camera.camera2.interop.Camera2CameraInfo.from(info).getCameraId())
+                        .append(" orientación=").append(info.getLensFacing()).append("\n");
+            }
+            for (int i = 0; i < android.hardware.Camera.getNumberOfCameras(); i++) {
+                android.hardware.Camera.CameraInfo info = new android.hardware.Camera.CameraInfo();
+                android.hardware.Camera.getCameraInfo(i, info);
+                detail.append("Legacy ID ").append(i).append(" orientación=").append(info.facing).append("\n");
+            }
+        } catch (Exception error) { detail.append(cameraErrorText(error)).append("\n"); }
+        detail.append("\n").append(replayCameraFailure);
+        TextView text = text(detail.toString(), 13, Color.DKGRAY, false);
+        text.setTextIsSelectable(true);
+        text.setPadding(dp(16), dp(8), dp(16), dp(8));
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(text);
+        new AlertDialog.Builder(this).setTitle("Diagnóstico de cámara frontal")
+                .setView(scroll).setPositiveButton("Cerrar", null).show();
     }
 
     private void startReplaySegment() {
@@ -1817,6 +1861,7 @@ public class MainActivity extends ComponentActivity {
         FileOutputOptions outputOptions =
                 new FileOutputOptions.Builder(segmentFile).build();
 
+        replaySegmentStartedAt = 0L;
         try {
             replayRecording = replayVideoCapture
                     .getOutput()
@@ -1824,12 +1869,18 @@ public class MainActivity extends ComponentActivity {
                     .start(
                             ContextCompat.getMainExecutor(this),
                             event -> {
+                                if (event instanceof VideoRecordEvent.Start) {
+                                    replaySegmentStartedAt = android.os.SystemClock.elapsedRealtime();
+                                    handler.postDelayed(rotateReplayRunnable, REPLAY_SEGMENT_MS);
+                                    return;
+                                }
                                 if (!(event instanceof VideoRecordEvent.Finalize)) {
                                     return;
                                 }
 
                                 handler.removeCallbacks(rotateReplayRunnable);
                                 replayRecording = null;
+                                replaySegmentStartedAt = 0L;
 
                                 VideoRecordEvent.Finalize finalized =
                                         (VideoRecordEvent.Finalize) event;
@@ -1839,6 +1890,11 @@ public class MainActivity extends ComponentActivity {
                                         segmentFile.length() > 0) {
                                     addReplaySegment(segmentFile);
                                 } else {
+                                    if (finalized.hasError()) {
+                                        replayCameraFailure = "Grabación: código " + finalized.getError()
+                                                + " · " + cameraErrorText(finalized.getCause());
+                                        replayCaptureDesired = false;
+                                    }
                                     try {
                                         segmentFile.delete();
                                     } catch (Throwable ignored) {
@@ -1860,8 +1916,8 @@ public class MainActivity extends ComponentActivity {
                             }
                     );
 
-            handler.postDelayed(rotateReplayRunnable, REPLAY_SEGMENT_MS);
         } catch (Throwable error) {
+            replayCameraFailure = "Inicio de grabación: " + cameraErrorText(error);
             replayRecording = null;
             replayCaptureDesired = false;
 
@@ -1947,6 +2003,20 @@ public class MainActivity extends ComponentActivity {
             return;
         }
 
+        if (replaySegments.isEmpty()) {
+            ReplayReadiness.State state = ReplayReadiness.evaluate(replayCameraFailure,
+                    replaySegmentStartedAt, android.os.SystemClock.elapsedRealtime());
+            if (state == ReplayReadiness.State.ERROR) {
+                showReplayCameraFailure();
+                return;
+            }
+            if (state == ReplayReadiness.State.WAIT) {
+                Toast.makeText(this, "Preparando el primer video; espera unos segundos.", Toast.LENGTH_SHORT).show();
+                if (replayRecording == null) startReplayCaptureIfReady();
+                return;
+            }
+        }
+
         resumeTimerAfterReplay =
                 useTimer &&
                 gameStarted &&
@@ -1981,6 +2051,17 @@ public class MainActivity extends ComponentActivity {
         if (!replayPlaybackOpen) return;
 
         if (replaySegments.isEmpty()) {
+            if (!replayCameraFailure.isEmpty()) {
+                replayPlaybackOpen = false;
+                if (resumeTimerAfterReplay && gameStarted && !matchFinished) {
+                    paused = false;
+                    lastTick = System.currentTimeMillis();
+                }
+                resumeTimerAfterReplay = false;
+                refresh();
+                showReplayCameraFailure();
+                return;
+            }
             Toast.makeText(
                     this,
                     "Todavía no hay video suficiente para repetir",
